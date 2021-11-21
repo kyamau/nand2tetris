@@ -42,5 +42,42 @@ CHIP ALU {
         ng; // 1 if (out < 0),  0 otherwise
 
     PARTS:
-   // Put you code here:
+    // if zx then x = 0
+    Mux16(a=x, b=false, sel=zx, out=x1);
+
+    // if nx then x = !x
+    Not16(in=x1, out=notx1);
+    Mux16(a=x1, b=notx1, sel=nx, out=x2);
+
+    // if zy then y = 0
+    Mux16(a=y, b=false, sel=zy, out=y1);
+
+    // if ny then y = !y
+    Not16(in=y1, out=noty1);
+    Mux16(a=y1, b=noty1, sel=ny, out=y2);
+
+    // if f then out = x + y
+    //      else out = x & y
+    Add16(a=x2, b=y2, out=sum);
+    And16(a=x2, b=y2, out=and);
+    Mux16(a=and, b=sum, sel=f, out=fout);
+
+    // if no then out = !out
+    Not16(in=fout, out=notfout);
+    Mux16(a=fout, b=notfout, sel=no, out[0..14]=outlower, out[15]=outmsb);
+
+    // if out=0 then zr = 1 else zr = 0
+    // memo: Avoiding "Sub bus of an internal node may not be uses." 
+    //       https://scrapbox.io/bugbearr/2019-10-18
+    And16(a[0..14]=outlower, a[15]=outmsb, b=true, out[0..7]=lower, out[8..15]=upper);
+    Or8Way(in=lower, out=ortmp1);
+    Or8Way(in=upper, out=ortmp2);
+    Or(a=ortmp1, b=ortmp2, out=zrtmp);
+    Not(in=zrtmp, out=zr);
+
+    // if out<0 then ng = 1 else ng = 0
+    Mux(a=false, b=true, sel=outmsb, out=ng);
+
+    // out
+    Or16(a[0..14]=outlower,a[15]=outmsb, b=false, out=out);
 }
