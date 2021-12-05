@@ -16,5 +16,11 @@ CHIP PC {
     OUT out[16];
 
     PARTS:
-    // Put your code here:
+
+    // The operator priority is inc > load > reset.
+    Inc16(in=feedback, out=outinc);
+    Mux16(a=fb, b=outinc, out=out1, sel=inc); // increment or not
+    Mux16(a=out1, b=in, out=out3, sel=load);  // load or not
+    Mux16(a=out3, b=false, out=out4,sel=reset); // reset or not
+    Register(in=out4, load=true, out=out, out=feedback); // output result ot out and feedback
 }
