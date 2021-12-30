@@ -39,5 +39,62 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+
+
+    // Memo:
+    //  A-instruction
+    //  15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00
+    //  0  v  v  v  v  v  v  v  v  v  v  v  v  v  v  v 
+    //
+    //  C-instruction
+    //  15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00
+    //  1  1  1  a  c1 c2 c3 c4 c5 c6 d1 d2 d3 j1 j2 j3
+
+    // Check if it's A-instruction or C-instruction.
+    Not(in=instruction[15], out=isAinst);
+
+    // If A, write the instuction to A register.
+    // If C, and d1 = 1, write the ALU result to A register.
+    Mux16(a=outALUtoA, b=instruction, sel=isAinst, out=inA);
+    And(a=instruction[15], b=instruction[5], out=isCinstAndWriteA);
+    Or(a=isAinst, b=isCinstAndWriteA, out=writeA);
+    ARegister(in=inA, load=writeA, out=outA, out[0..14]=addressM);
+
+    // Choose ALU's first operand.
+    //    C-instruction's a = 0 => value of A register
+    //                    a = 1 => RAM[A]
+    Mux16(a=outA, b=inM, sel=instruction[12], out=ALUy);
+    ALU(x=outD, y=ALUy, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=outALUtoA, out=outALUtoD, out=outM, zr=ALUzr, ng=ALUng);
+
+    // Check jump condition
+
+    // gtzero = (out > 0)
+    Or(a=ALUzr,b=ALUng, out=lteqzero);
+    Not(in=lteqzero, out=gtzero);
+
+    // (j1 & ALUng || j2 & ALUzr || j3 & gtzero) && C-insturction => jump
+    And(a=ALUng, b=instruction[2], out=j1flag);
+    And(a=ALUzr, b=instruction[1], out=j2flag);
+    And(a=gtzero, b=instruction[0], out=j3flag);
+    Or(a=j1flag, b=j2flag, out=j1j2flag);
+    // Remark: For any ALU output, j1 = j2 = j3 = 0 => jump = 0. Because every jXflag will be 0.
+    //         For any ALU output, j1 = j2 = j3 = 1 => jump = 1. Because one of jXflag will be 1.
+    Or(a=j3flag, b=j1j2flag, out=j1j2j3flag);
+    And(a=instruction[15], b=j1j2j3flag, out=jump);
+
+    // Write the ALU result
+
+    // Case d1: write to A register
+    // (implement above ↑)
+
+    // Case d2: write to D register
+    And(a=instruction[15], b=instruction[4], out=isCinstAndWriteD);
+    DRegister(in=outALUtoD, load=isCinstAndWriteD, out=outD);
+
+    // Case d3: write to the memory
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    // Program counter
+    PC(in=outA, load=jump, inc=true, reset=reset, out[0..14]=pc);
+
 }
