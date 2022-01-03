@@ -23,9 +23,6 @@ var comment *regexp.Regexp = regexp.MustCompile(`(//).*`)
 var spaceTab *regexp.Regexp = regexp.MustCompile(`[\t ]`)
 var emptyLine *regexp.Regexp = regexp.MustCompile(`(?m)^\n`)
 
-//var a_command *regexp.Regexp = regexp.MustCompile(`^@[a-zA-Z0-9_\.\$:]+$`)
-//var label *regexp.Regexp = regexp.MustCompile(`^\([a-zA-Z0-9_\.\$:]+\)$`)
-
 type Command struct {
 	command     string
 	commandType CommandType
@@ -65,6 +62,22 @@ func (p *Parser) Symbol() string {
 		log.Fatalf("Can't get symbol from command other than A : %v", cmd)
 	}
 	return cmd[1:]
+}
+
+func (p *Parser) RewriteSymbolToAddress(address uint16) {
+	cmd := p.Current()
+	if p.CommandType() != A_COMMAND {
+		log.Fatalf("Can't set address to command other than A : %v", cmd)
+	}
+	p.commands[p.current] = "@" + fmt.Sprint(address)
+}
+
+func (p *Parser) Label() string {
+	cmd := p.Current()
+	if p.CommandType() != L_COMMAND {
+		log.Fatalf("Can't get label from command other than L : %v", cmd)
+	}
+	return cmd[1 : len(cmd)-2]
 }
 
 func (p *Parser) Dest() string {
@@ -108,6 +121,10 @@ func (p *Parser) Jump() string {
 
 func (p *Parser) Current() string {
 	return p.commands[p.current]
+}
+
+func (p *Parser) ResetCurrent() {
+	p.current = 0
 }
 
 func removeIrrelevants(lines []string) []string {

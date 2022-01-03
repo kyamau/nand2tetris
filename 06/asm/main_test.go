@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,9 +21,12 @@ type args struct {
 	r io.Reader
 }
 
-func readTestcases(dirPath string) []testCase {
+/*
+Return test cases made from all .asm and .hack in testDirPath
+*/
+func readTestcases(testDirPath string) []testCase {
 	cases := make([]testCase, 0)
-	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(testDirPath, func(path string, info os.FileInfo, err error) error {
 		if filepath.Ext(path) == ".asm" {
 			_, filename := filepath.Split(path)
 			if strings.Contains(filename, "L") {
@@ -39,8 +41,8 @@ func readTestcases(dirPath string) []testCase {
 	return cases
 }
 
-func readHack(filePath string) []uint16 {
-	f, _ := os.Open(filePath)
+func readHack(path string) []uint16 {
+	f, _ := os.Open(path)
 	b, _ := ioutil.ReadAll(f)
 	s := string(b)
 	s = strings.TrimRight(s, "\r\n")
@@ -54,14 +56,14 @@ func readHack(filePath string) []uint16 {
 
 func TestCompile(t *testing.T) {
 
-	easy := testCase{name: "easy case",
+	tests := readTestcases("./test")
+	easycase := testCase{name: "easy case",
 		args: args{r: strings.NewReader("//foo\r\n\r\n@1\r\nD=A-1;JGT\r\n")},
 		want: []uint16{0b0000000000000001, 0b1110110010010001},
 	}
-	tests := readTestcases("./test")
-	tests = append([]testCase{easy}, tests...)
+	tests = append([]testCase{easycase}, tests...)
 	for _, tt := range tests {
-		log.Printf("Test %v", tt.name)
+		t.Logf("Test %v", tt.name)
 		t.Run(tt.name, func(t *testing.T) {
 			got := Compile(tt.args.r)
 			if !reflect.DeepEqual(got, tt.want) {
