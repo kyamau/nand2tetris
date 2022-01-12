@@ -6,8 +6,10 @@ import (
 	"asm/symbol_table"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -79,9 +81,21 @@ func main() {
 		fmt.Println("Usage: Assembler <.asm>")
 		os.Exit(1)
 	}
-	f, err := os.Open(os.Args[1])
+	path := os.Args[1]
+	f, err := os.Open(path)
 	if err != nil {
 		log.Fatalf("Couldn't open .asm : %v", err)
 	}
-	Compile(f)
+
+	obj := Compile(f)
+	hackPath := "./" + filepath.Base(path[:len(path)-len(filepath.Ext(path))]) + ".hack"
+
+	hackb := ""
+	for i := 0; i < len(obj); i++ {
+		hackb += fmt.Sprintf("%016b\r\n", obj[i])
+	}
+	err = ioutil.WriteFile(hackPath, []byte(hackb), 644)
+	if err != nil {
+		log.Fatalf("Couldn't write .hack : %v, %v", hackPath, err)
+	}
 }
