@@ -23,7 +23,6 @@ func Compile(r io.Reader) string {
 	p.Advance()
 
 	var b bytes.Buffer
-	//b.WriteString(codewriter.PrepareTrueAndFalse())
 	for ; ; p.Advance() {
 		cmdType := p.CommandType()
 		switch cmdType {

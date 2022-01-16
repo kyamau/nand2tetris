@@ -11,7 +11,7 @@ import (
 var labelIndex int
 
 func pushD(code *bytes.Buffer) {
-	code.WriteString("@SP\r\n")
+	code.WriteString("@SP // Push the value at the address in D\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("M=D\r\n")
 	code.WriteString("@SP\r\n")
@@ -19,7 +19,7 @@ func pushD(code *bytes.Buffer) {
 }
 
 func popToD(code *bytes.Buffer) {
-	code.WriteString("@SP\r\n")
+	code.WriteString("@SP // Pop to the address in D\r\n")
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
@@ -30,14 +30,14 @@ func setTrueOrFalseToD(code *bytes.Buffer, comp string, jump string) {
 	code.WriteString(fmt.Sprintf("%v;%v\r\n", comp, jump))
 
 	// False: set 0 to D
-	code.WriteString("@0\r\n")
+	code.WriteString("@0 // False: set 0 to D\r\n")
 	code.WriteString("D=A\r\n")
 	code.WriteString(fmt.Sprintf("@TFEND%v\r\n", labelIndex))
 	code.WriteString("0;JMP\r\n")
 
 	// True: set -1 to D
 	code.WriteString(fmt.Sprintf("(TRUE%v)\r\n", labelIndex))
-	code.WriteString("@1\r\n")
+	code.WriteString("@1 // True: set -1 to D\r\n")
 	code.WriteString("D=-A\r\n")
 
 	code.WriteString(fmt.Sprintf("(TFEND%v)\r\n", labelIndex))
@@ -49,14 +49,14 @@ func WriteArithmetic(op parser.ALOperator) string {
 
 	// Pop operand y from the stack to R13
 	popToD(&code)
-	code.WriteString("@13\r\n")
+	code.WriteString("@13 // Pop y to R13\r\n")
 	code.WriteString("M=D\r\n")
 
 	// If op is a binary operator, Pop operand x from the stack to R14
 	switch op {
 	case parser.ADD, parser.SUB, parser.EQ, parser.GT, parser.LT, parser.AND, parser.OR:
 		popToD(&code)
-		code.WriteString("@14\r\n")
+		code.WriteString("@14 // Pop x to R14\r\n")
 		code.WriteString("M=D\r\n")
 	}
 
@@ -136,7 +136,7 @@ func segment2Symbol(segment string) string {
 
 func setAddressToD(code *bytes.Buffer, segment string, index int) {
 	segsym := segment2Symbol(segment)
-	code.WriteString(fmt.Sprintf("@%v\r\n", index))
+	code.WriteString(fmt.Sprintf("@%v // Set segment + index address to D\r\n", index))
 	code.WriteString("D=A\r\n")
 	code.WriteString(fmt.Sprintf("@%v\r\n", segsym))
 	switch segment {
@@ -154,16 +154,16 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 
 		// Pop to R13
 		popToD(&code)
-		code.WriteString("@13\r\n") // Load poped item to R13
+		code.WriteString("@13 // Load poped value to R13\r\n")
 		code.WriteString("M=D\r\n")
 
-		// Calculate segment + i and set it to R14
+		// Calculate segment + index and set the address to R14
 		setAddressToD(&code, segment, index)
-		code.WriteString("@14\r\n") // Load poped item to R13
+		code.WriteString("@14 // Load segment + index address to R14\r\n")
 		code.WriteString("M=D\r\n")
 
-		// Write the poped value to the destination
-		code.WriteString("@13\r\n")
+		// Write the value in R13 to the address in R14
+		code.WriteString("@13 // Write the value in R13 to the address in R14\r\n")
 		code.WriteString("D=M\r\n")
 		code.WriteString("@14\r\n")
 		code.WriteString("A=M\r\n")
