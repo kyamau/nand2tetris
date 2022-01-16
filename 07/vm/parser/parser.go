@@ -67,6 +67,8 @@ func ALOperatorFromString(s string) (ALOperator, error) {
 		return AND, nil
 	case "or":
 		return OR, nil
+	case "not":
+		return NOT, nil
 	}
 	return UNKNOWN_ALOPERATOR, fmt.Errorf("Not an arithmetic operator : %v", s)
 }
