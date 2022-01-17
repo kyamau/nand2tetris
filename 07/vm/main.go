@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"vm/codewriter"
 	"vm/parser"
@@ -52,7 +54,8 @@ func Compile(r io.Reader) string {
 func main() {
 	if len(os.Args) != 2 {
 		exe, _ := os.Executable()
-		fmt.Errorf("Usage: %v <.vm>", exe)
+		fmt.Fprintf(os.Stderr, "Usage: %v <.vm>\n", filepath.Base(exe))
+		os.Exit(1)
 	}
 
 	vmPath := os.Args[1]
@@ -60,6 +63,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Couldn't open file : %v", vmPath)
 	}
+
 	c := Compile(f)
-	fmt.Println(c)
+	asmPath := filepath.Base(vmPath[:len(vmPath)-len(filepath.Ext(vmPath))]) + ".asm"
+	err = ioutil.WriteFile(asmPath, []byte(c), 644)
+	if err != nil {
+		log.Fatalf("Couldn't write .asm : %v, %v", asmPath, err)
+	}
 }

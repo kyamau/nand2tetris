@@ -78,7 +78,8 @@ func Compile(r io.Reader) []uint16 {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: Assembler <.asm>")
+		exe, _ := os.Executable()
+		fmt.Fprintf(os.Stderr, "Usage: %v <.asm>\n", filepath.Base(exe))
 		os.Exit(1)
 	}
 	path := os.Args[1]
@@ -88,7 +89,7 @@ func main() {
 	}
 
 	obj := Compile(f)
-	hackPath := "./" + filepath.Base(path[:len(path)-len(filepath.Ext(path))]) + ".hack"
+	hackPath := filepath.Base(path[:len(path)-len(filepath.Ext(path))]) + ".hack"
 
 	hackb := ""
 	for i := 0; i < len(obj); i++ {
