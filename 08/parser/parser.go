@@ -23,7 +23,7 @@ const (
 	C_ARITHMETIC CommandType = iota
 	C_PUSH
 	C_POP
-	C_LABE
+	C_LABEL
 	C_GOTO
 	C_IF
 	C_FUNCTION
@@ -97,12 +97,17 @@ func (p *Parser) CommandType() CommandType {
 	cmdLine := p.Current()
 	cmd := strings.Split(cmdLine, " ")[0]
 
-	// Is POP or PUSH?
 	switch cmd {
 	case "pop":
 		return C_POP
 	case "push":
 		return C_PUSH
+	case "label":
+		return C_LABEL
+	case "goto":
+		return C_GOTO
+	case "if-goto":
+		return C_IF
 	}
 	// Is arithmetic operator?
 	_, err := ALOperatorFromString(cmd)

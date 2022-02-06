@@ -187,3 +187,24 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 	return code.String()
 
 }
+
+func WriteLabel(label string) string {
+	var code bytes.Buffer
+	code.WriteString(fmt.Sprintf("(%v)\r\n", label))
+	return code.String()
+}
+
+func WriteGoto(label string) string {
+	var code bytes.Buffer
+	code.WriteString(fmt.Sprintf("@%v\r\n", label))
+	code.WriteString("0;JMP\r\n")
+	return code.String()
+}
+
+func WriteIf(label string) string {
+	var code bytes.Buffer
+	popToD(&code)
+	code.WriteString(fmt.Sprintf("@%v\r\n", label))
+	code.WriteString("D;JNE\r\n")
+	return code.String()
+}

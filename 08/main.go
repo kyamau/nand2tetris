@@ -37,6 +37,18 @@ func Compile(r io.Reader) string {
 			}
 			c := codewriter.WritePushPop(cmdType, arg1, arg2)
 			b.WriteString(c)
+		case parser.C_LABEL:
+			label := p.Arg1()
+			c := codewriter.WriteLabel(label)
+			b.WriteString(c)
+		case parser.C_GOTO:
+			label := p.Arg1()
+			c := codewriter.WriteGoto(label)
+			b.WriteString(c)
+		case parser.C_IF:
+			label := p.Arg1()
+			c := codewriter.WriteIf(label)
+			b.WriteString(c)
 		case parser.C_ARITHMETIC:
 			op, err := parser.ALOperatorFromString(p.Current())
 			if err != nil {
