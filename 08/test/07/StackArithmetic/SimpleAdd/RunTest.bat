@@ -1,5 +1,5 @@
-set ROOT=..\..\..\
-set TOOL=..\..\..\..\..\..\tools\
+set ROOT=..\..\..\..\
+set TOOL=%ROOT%..\..\tools\
 set TARGET=SimpleAdd
 
 go build  -o %ROOT%vm.exe %ROOT%
