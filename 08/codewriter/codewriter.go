@@ -4,22 +4,25 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"strings"
 
 	"vm/parser"
 )
 
 var labelIndex int
 
-func pushD(code *bytes.Buffer) {
-	code.WriteString("@SP // Push the value at the address in D\r\n")
+func pushD(code *bytes.Buffer, comment ...string) {
+	str := strings.Join(comment, ",")
+	code.WriteString(fmt.Sprintf("@SP // %vPush the value at the address in D\r\n", str))
 	code.WriteString("A=M\r\n")
 	code.WriteString("M=D\r\n")
 	code.WriteString("@SP\r\n")
 	code.WriteString("M=M+1\r\n")
 }
 
-func popToD(code *bytes.Buffer) {
-	code.WriteString("@SP // Pop to the address in D\r\n")
+func popToD(code *bytes.Buffer, comment ...string) {
+	str := strings.Join(comment, ",")
+	code.WriteString(fmt.Sprintf("@SP // %vPop to the address in D\r\n", str))
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
@@ -48,7 +51,7 @@ func WriteArithmetic(op parser.ALOperator) string {
 	var code bytes.Buffer
 
 	// Pop operand y from the stack to R13
-	popToD(&code)
+	popToD(&code, fmt.Sprintf("[Start:WriteArithmetic(%v)]", op))
 	code.WriteString("@13 // Pop y to R13\r\n")
 	code.WriteString("M=D\r\n")
 
@@ -134,9 +137,10 @@ func segment2Symbol(segment string) string {
 	return ""
 }
 
-func setAddressToD(code *bytes.Buffer, segment string, index int) {
+func setAddressToD(code *bytes.Buffer, segment string, index int, comment ...string) {
+	str := strings.Join(comment, ",")
 	segsym := segment2Symbol(segment)
-	code.WriteString(fmt.Sprintf("@%v // Set segment + index address to D\r\n", index))
+	code.WriteString(fmt.Sprintf("@%v // %v Set segment + index address to D\r\n", index, str))
 	code.WriteString("D=A\r\n")
 	code.WriteString(fmt.Sprintf("@%v\r\n", segsym))
 	switch segment {
@@ -153,7 +157,7 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 	case parser.C_POP:
 
 		// Pop to R13
-		popToD(&code)
+		popToD(&code, fmt.Sprintf("[Start:WritePushPop - pop(%v, %v, %v)] ", cmdType, segment, index))
 		code.WriteString("@13 // Load poped value to R13\r\n")
 		code.WriteString("M=D\r\n")
 
@@ -173,10 +177,10 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 		// Load to D
 		switch segment {
 		case "constant":
-			code.WriteString(fmt.Sprintf("@%v\r\n", index))
+			code.WriteString(fmt.Sprintf("@%v // [Start:WritePushPop - push(%v, %v, %v)]\r\n", index, cmdType, segment, index))
 			code.WriteString("D=A\r\n")
 		default:
-			setAddressToD(&code, segment, index)
+			setAddressToD(&code, segment, index, fmt.Sprintf("[Start:WritePushPop - push(%v, %v, %v)]", cmdType, segment, index))
 			code.WriteString("A=D\r\n")
 			code.WriteString("D=M\r\n")
 		}
@@ -196,15 +200,89 @@ func WriteLabel(label string) string {
 
 func WriteGoto(label string) string {
 	var code bytes.Buffer
-	code.WriteString(fmt.Sprintf("@%v\r\n", label))
+	code.WriteString(fmt.Sprintf("@%v // [Start:WriteGoto(%v)]\r\n", label, label))
 	code.WriteString("0;JMP\r\n")
+	return code.String()
+}
+
+func WriteGotoA() string {
+	var code bytes.Buffer
+	code.WriteString("0;JMP // [Start:WriteGotoA()\r\n")
 	return code.String()
 }
 
 func WriteIf(label string) string {
 	var code bytes.Buffer
 	popToD(&code)
-	code.WriteString(fmt.Sprintf("@%v\r\n", label))
+	code.WriteString(fmt.Sprintf("@%v // [Start:WriteIf(%v)]\r\n", label, label))
 	code.WriteString("D;JNE\r\n")
+	return code.String()
+}
+
+func WriteFunction(name string, nLocals int) string {
+	var code bytes.Buffer
+	code.WriteString(WriteLabel(name))
+	// Initialize local variables
+	for i := 0; i < nLocals; i++ {
+		code.WriteString(WritePushPop(parser.C_PUSH, "constant", 0))
+	}
+
+	return code.String()
+}
+
+func WriteReturn() string {
+	var code bytes.Buffer
+	// CALLEE_FRAME = LCL
+	code.WriteString("@LCL // [Start:WriteReturn] R13 = LCL\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@R15\r\n")
+	code.WriteString("M=D\r\n")
+
+	// Pop the return value to ARG and set SP to ARG+1
+	code.WriteString(WritePushPop(parser.C_POP, "argument", 0))
+	code.WriteString("@ARG\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@SP\r\n")
+	code.WriteString("M=D+1\r\n")
+
+	// Restore caller registers
+	// THAT = *(CALLEE_FRAME-1)
+	code.WriteString("@R15\r\n")
+	code.WriteString("M=M-1\r\n")
+	code.WriteString("A=M\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@THAT\r\n")
+	code.WriteString("M=D\r\n")
+
+	// THIS = *(CALLEE_FRAME-2)
+	code.WriteString("@R15\r\n")
+	code.WriteString("M=M-1\r\n")
+	code.WriteString("A=M\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@THIS\r\n")
+	code.WriteString("M=D\r\n")
+
+	// ARG = *(CALLEE_FRAME-3)
+	code.WriteString("@R15\r\n")
+	code.WriteString("M=M-1\r\n")
+	code.WriteString("A=M\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@ARG\r\n")
+	code.WriteString("M=D\r\n")
+
+	// LCL = *(CALLEE_FRAME-4)
+	code.WriteString("@R15\r\n")
+	code.WriteString("M=M-1\r\n")
+	code.WriteString("A=M\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@LCL\r\n")
+	code.WriteString("M=D\r\n")
+
+	// RET = *(CALLEE_FRAME-5)
+	code.WriteString("@R15\r\n")
+	code.WriteString("M=M-1\r\n")
+	code.WriteString("A=M\r\n")
+	// Jump to RET
+	code.WriteString(WriteGotoA())
 	return code.String()
 }

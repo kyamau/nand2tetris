@@ -49,6 +49,18 @@ func Compile(r io.Reader) string {
 			label := p.Arg1()
 			c := codewriter.WriteIf(label)
 			b.WriteString(c)
+		case parser.C_FUNCTION:
+			name := p.Arg1()
+			arg2 := p.Arg2()
+			nLocals, err := strconv.Atoi(arg2)
+			if err != nil {
+				log.Fatalf("2nd argument of function must be integer : %v", arg2)
+			}
+			c := codewriter.WriteFunction(name, nLocals)
+			b.WriteString(c)
+		case parser.C_RETURN:
+			c := codewriter.WriteReturn()
+			b.WriteString(c)
 		case parser.C_ARITHMETIC:
 			op, err := parser.ALOperatorFromString(p.Current())
 			if err != nil {
