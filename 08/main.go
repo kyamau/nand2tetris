@@ -61,6 +61,15 @@ func Compile(r io.Reader) string {
 		case parser.C_RETURN:
 			c := codewriter.WriteReturn()
 			b.WriteString(c)
+		case parser.C_CALL:
+			name := p.Arg1()
+			arg2 := p.Arg2()
+			nArgs, err := strconv.Atoi(arg2)
+			if err != nil {
+				log.Fatalf("2nd argument of call must be integer : %v", arg2)
+			}
+			c := codewriter.WriteCall(name, nArgs)
+			b.WriteString(c)
 		case parser.C_ARITHMETIC:
 			op, err := parser.ALOperatorFromString(p.Current())
 			if err != nil {

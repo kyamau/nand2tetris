@@ -112,6 +112,8 @@ func (p *Parser) CommandType() CommandType {
 		return C_FUNCTION
 	case "return":
 		return C_RETURN
+	case "call":
+		return C_CALL
 	}
 	// Is arithmetic operator?
 	_, err := ALOperatorFromString(cmd)

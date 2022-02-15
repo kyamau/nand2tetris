@@ -198,6 +198,14 @@ func WriteLabel(label string) string {
 	return code.String()
 }
 
+var labelCnt int = 0
+
+func generateUniqueLabel(label string) string {
+	ret := fmt.Sprintf("%v%v", label, labelCnt)
+	labelCnt++
+	return ret
+}
+
 func WriteGoto(label string) string {
 	var code bytes.Buffer
 	code.WriteString(fmt.Sprintf("@%v // [Start:WriteGoto(%v)]\r\n", label, label))
@@ -219,6 +227,14 @@ func WriteIf(label string) string {
 	return code.String()
 }
 
+func WriteIfJLE(label string) string {
+	var code bytes.Buffer
+	popToD(&code)
+	code.WriteString(fmt.Sprintf("@%v // [Start:WriteIfJEQ(%v)]\r\n", label, label))
+	code.WriteString("D;JLE\r\n")
+	return code.String()
+}
+
 func WriteFunction(name string, nLocals int) string {
 	var code bytes.Buffer
 	code.WriteString(WriteLabel(name))
@@ -232,22 +248,38 @@ func WriteFunction(name string, nLocals int) string {
 
 func WriteReturn() string {
 	var code bytes.Buffer
-	// CALLEE_FRAME = LCL
-	code.WriteString("@LCL // [Start:WriteReturn] R13 = LCL\r\n")
+
+	// RET = *(CALLEE_FRAME-5)
+	// We have to memorize a return address before setting a return value on the top of the calle's frame.
+	// Because if the function don't have any argurements, the top of the frame is the return address and will be overwritten by the return value.
+	code.WriteString("@LCL\r\n")
+	code.WriteString("D=M-1\r\n")
+	code.WriteString("D=D-1\r\n")
+	code.WriteString("D=D-1\r\n")
+	code.WriteString("D=D-1\r\n")
+	code.WriteString("D=D-1\r\n")
+	code.WriteString("A=D\r\n")
 	code.WriteString("D=M\r\n")
-	code.WriteString("@R15\r\n")
+	code.WriteString("@R15\r\n") // RET
 	code.WriteString("M=D\r\n")
 
-	// Pop the return value to ARG and set SP to ARG+1
+	// Pop the return value to *ARG, that is the top of the callee's frame.
 	code.WriteString(WritePushPop(parser.C_POP, "argument", 0))
+	// Set ARG+1 to SP.
 	code.WriteString("@ARG\r\n")
 	code.WriteString("D=M\r\n")
 	code.WriteString("@SP\r\n")
 	code.WriteString("M=D+1\r\n")
 
+	// CALLEE_FRAME = LCL
+	code.WriteString("@LCL // [Start:WriteReturn] R13 = LCL\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@R13\r\n") //R13 is a counter
+	code.WriteString("M=D\r\n")
+
 	// Restore caller registers
 	// THAT = *(CALLEE_FRAME-1)
-	code.WriteString("@R15\r\n")
+	code.WriteString("@R13\r\n")
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
@@ -255,7 +287,7 @@ func WriteReturn() string {
 	code.WriteString("M=D\r\n")
 
 	// THIS = *(CALLEE_FRAME-2)
-	code.WriteString("@R15\r\n")
+	code.WriteString("@R13\r\n")
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
@@ -263,7 +295,7 @@ func WriteReturn() string {
 	code.WriteString("M=D\r\n")
 
 	// ARG = *(CALLEE_FRAME-3)
-	code.WriteString("@R15\r\n")
+	code.WriteString("@R13\r\n")
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
@@ -271,18 +303,67 @@ func WriteReturn() string {
 	code.WriteString("M=D\r\n")
 
 	// LCL = *(CALLEE_FRAME-4)
-	code.WriteString("@R15\r\n")
+	code.WriteString("@R13\r\n")
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
 	code.WriteString("@LCL\r\n")
 	code.WriteString("M=D\r\n")
 
-	// RET = *(CALLEE_FRAME-5)
-	code.WriteString("@R15\r\n")
-	code.WriteString("M=M-1\r\n")
-	code.WriteString("A=M\r\n")
 	// Jump to RET
+	code.WriteString("@R15\r\n") // RET
+	code.WriteString("A=M\r\n")
 	code.WriteString(WriteGotoA())
+	return code.String()
+}
+
+func WriteCall(name string, nArgs int) string {
+	var code bytes.Buffer
+	// Push return address
+	retLabel := generateUniqueLabel("RET")
+	code.WriteString(fmt.Sprintf("@%v // [Start:WriteCall(%v,%v)] Push return address\r\n", retLabel, name, nArgs))
+	code.WriteString("D=A\r\n")
+	pushD(&code)
+
+	// Save LCL
+	code.WriteString("@LCL\r\n")
+	code.WriteString("D=M\r\n")
+	pushD(&code)
+
+	// Save ARG
+	code.WriteString("@ARG\r\n")
+	code.WriteString("D=M\r\n")
+	pushD(&code)
+
+	// Save THIS
+	code.WriteString("@THIS\r\n")
+	code.WriteString("D=M\r\n")
+	pushD(&code)
+
+	// Save THAT
+	code.WriteString("@THAT\r\n")
+	code.WriteString("D=M\r\n")
+	pushD(&code)
+
+	// ARG = SP-n-5
+	code.WriteString("@SP\r\n")
+	code.WriteString("D=M\r\n")
+	for i := 0; i < 5+nArgs; i++ {
+		code.WriteString("D=D-1\r\n")
+	}
+	code.WriteString("@ARG\r\n")
+	code.WriteString("M=D\r\n")
+
+	// LCL = SP
+	code.WriteString("@SP\r\n")
+	code.WriteString("D=M\r\n")
+	code.WriteString("@LCL\r\n")
+	code.WriteString("M=D\r\n")
+
+	// goto f
+	code.WriteString(WriteGoto(name))
+
+	// label for return
+	code.WriteString(WriteLabel(retLabel))
 	return code.String()
 }
