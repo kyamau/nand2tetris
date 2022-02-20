@@ -10,8 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"vm/codewriter"
 	"vm/parser"
+)
+
+const (
+	SEP = "\r\n"
 )
 
 func Compile(r io.Reader, vmName string, bootstrap bool) string {
@@ -25,9 +30,9 @@ func Compile(r io.Reader, vmName string, bootstrap bool) string {
 	}
 	p.Advance()
 
-	var b bytes.Buffer
+	var code []string
 	if bootstrap {
-		b.WriteString(codewriter.Bootstrap())
+		code = append(code, codewriter.Bootstrap()...)
 	}
 	for ; ; p.Advance() {
 		cmdType := p.CommandType()
@@ -41,23 +46,23 @@ func Compile(r io.Reader, vmName string, bootstrap bool) string {
 			}
 			if segment != "static" {
 				c := codewriter.WritePushPop(cmdType, segment, index)
-				b.WriteString(c)
+				code = append(code, c...)
 			} else {
 				c := codewriter.WritePushPopStatic(cmdType, segment, index, vmName)
-				b.WriteString(c)
+				code = append(code, c...)
 			}
 		case parser.C_LABEL:
 			label := p.Arg1()
 			c := codewriter.WriteLabel(label)
-			b.WriteString(c)
+			code = append(code, c...)
 		case parser.C_GOTO:
 			label := p.Arg1()
 			c := codewriter.WriteGoto(label)
-			b.WriteString(c)
+			code = append(code, c...)
 		case parser.C_IF:
 			label := p.Arg1()
 			c := codewriter.WriteIf(label)
-			b.WriteString(c)
+			code = append(code, c...)
 		case parser.C_FUNCTION:
 			name := p.Arg1()
 			arg2 := p.Arg2()
@@ -66,10 +71,10 @@ func Compile(r io.Reader, vmName string, bootstrap bool) string {
 				log.Fatalf("2nd argument of function must be integer : %v", arg2)
 			}
 			c := codewriter.WriteFunction(name, nLocals)
-			b.WriteString(c)
+			code = append(code, c...)
 		case parser.C_RETURN:
 			c := codewriter.WriteReturn()
-			b.WriteString(c)
+			code = append(code, c...)
 		case parser.C_CALL:
 			name := p.Arg1()
 			arg2 := p.Arg2()
@@ -78,36 +83,35 @@ func Compile(r io.Reader, vmName string, bootstrap bool) string {
 				log.Fatalf("2nd argument of call must be integer : %v", arg2)
 			}
 			c := codewriter.WriteCall(name, nArgs)
-			b.WriteString(c)
+			code = append(code, c...)
 		case parser.C_ARITHMETIC:
 			op, err := parser.ALOperatorFromString(p.Current())
 			if err != nil {
 				log.Fatalf("Invalid operator : %v", op)
 			}
 			c := codewriter.WriteArithmetic(op)
-			b.WriteString(c)
+			code = append(code, c...)
 		}
 		if !p.HasMoreCommands() {
-			return b.String()
+			return strings.Join(code, SEP)
 		}
 	}
 }
 
 func main() {
-	var (
-		bootstrap = flag.Bool("bootstrap", true, "Write bootstrap code or not")
-	)
+	bootstrap := true
+	flag.BoolVar(&bootstrap, "bootstrap", true, "Write bootstrap code or not")
 	flag.Parse()
+
 	args := flag.Args()
 	if flag.NArg() < 1 {
 		exe, _ := os.Executable()
 		fmt.Fprintf(os.Stderr, "Usage: %v <.vm dir> -bootstrap=<true/false>]\n", filepath.Base(exe))
 		os.Exit(1)
 	}
-
 	vmDirPath, _ := filepath.Abs(args[0])
-	var asm bytes.Buffer
 
+	var asm bytes.Buffer
 	err := filepath.Walk(vmDirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println(err)
@@ -119,8 +123,8 @@ func main() {
 				fmt.Println(err)
 				return err
 			}
-			vmName := info.Name()[0 : len(info.Name())-3]
-			asm.WriteString(Compile(bytes.NewReader(b), vmName, *bootstrap))
+			vmName := strings.TrimSuffix(info.Name(), ".vm")
+			asm.WriteString(Compile(bytes.NewReader(b), vmName, bootstrap))
 		}
 		return nil
 	})
