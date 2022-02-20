@@ -87,18 +87,35 @@ func Compile(r io.Reader) string {
 func main() {
 	if len(os.Args) != 2 {
 		exe, _ := os.Executable()
-		fmt.Fprintf(os.Stderr, "Usage: %v <.vm>\n", filepath.Base(exe))
+		fmt.Fprintf(os.Stderr, "Usage: %v <.vm dir>\n", filepath.Base(exe))
 		os.Exit(1)
 	}
 
-	vmPath := os.Args[1]
-	f, err := os.Open(vmPath)
+	vmDirPath, _ := filepath.Abs(os.Args[1])
+	var commands bytes.Buffer
+
+	err := filepath.Walk(vmDirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(info.Name()) == ".vm" {
+			b, err := ioutil.ReadFile(path)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			commands.Write(b)
+		}
+		return nil
+	})
+
 	if err != nil {
-		log.Fatalf("Couldn't open file : %v", vmPath)
+		log.Fatalf("Couldn't read .vm in the directory : %v", err)
 	}
 
-	c := Compile(f)
-	asmPath := filepath.Base(vmPath[:len(vmPath)-len(filepath.Ext(vmPath))]) + ".asm"
+	c := Compile(bytes.NewReader(commands.Bytes()))
+	asmPath := filepath.Base(vmDirPath) + ".asm"
 	err = ioutil.WriteFile(asmPath, []byte(c), 644)
 	if err != nil {
 		log.Fatalf("Couldn't write .asm : %v, %v", asmPath, err)
