@@ -24,21 +24,25 @@ func Bootstrap() string {
 	return code.String()
 }
 
-func pushD(code *bytes.Buffer, comment ...string) {
+func pushD(comment ...string) string {
+	var code bytes.Buffer
 	str := strings.Join(comment, ",")
 	code.WriteString(fmt.Sprintf("@SP // %vPush the value at the address in D\r\n", str))
 	code.WriteString("A=M\r\n")
 	code.WriteString("M=D\r\n")
 	code.WriteString("@SP\r\n")
 	code.WriteString("M=M+1\r\n")
+	return code.String()
 }
 
-func popToD(code *bytes.Buffer, comment ...string) {
+func popToD(comment ...string) string {
+	var code bytes.Buffer
 	str := strings.Join(comment, ",")
 	code.WriteString(fmt.Sprintf("@SP // %vPop to the address in D\r\n", str))
 	code.WriteString("M=M-1\r\n")
 	code.WriteString("A=M\r\n")
 	code.WriteString("D=M\r\n")
+	return code.String()
 }
 
 func setTrueOrFalseToD(code *bytes.Buffer, comp string, jump string) {
@@ -64,14 +68,14 @@ func WriteArithmetic(op parser.ALOperator) string {
 	var code bytes.Buffer
 
 	// Pop operand y from the stack to R13
-	popToD(&code, fmt.Sprintf("[Start:WriteArithmetic(%v)]", op))
+	code.WriteString(popToD(fmt.Sprintf("[Start:WriteArithmetic(%v)]", op)))
 	code.WriteString("@13 // Pop y to R13\r\n")
 	code.WriteString("M=D\r\n")
 
 	// If op is a binary operator, Pop operand x from the stack to R14
 	switch op {
 	case parser.ADD, parser.SUB, parser.EQ, parser.GT, parser.LT, parser.AND, parser.OR:
-		popToD(&code)
+		code.WriteString(popToD())
 		code.WriteString("@14 // Pop x to R14\r\n")
 		code.WriteString("M=D\r\n")
 	}
@@ -124,7 +128,7 @@ func WriteArithmetic(op parser.ALOperator) string {
 		code.WriteString("D=!M\r\n")
 	}
 	// Push D to the stack
-	pushD(&code)
+	code.WriteString(pushD())
 
 	return code.String()
 }
@@ -170,7 +174,7 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 	case parser.C_POP:
 
 		// Pop to R13
-		popToD(&code, fmt.Sprintf("[Start:WritePushPop - pop(%v, %v, %v)] ", cmdType, segment, index))
+		code.WriteString(popToD(fmt.Sprintf("[Start:WritePushPop - pop(%v, %v, %v)] ", cmdType, segment, index)))
 		code.WriteString("@13 // Load poped value to R13\r\n")
 		code.WriteString("M=D\r\n")
 
@@ -199,7 +203,7 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 		}
 
 		// Push
-		pushD(&code)
+		code.WriteString(pushD())
 	}
 	return code.String()
 
@@ -211,7 +215,7 @@ func WritePushPopStatic(cmdType parser.CommandType, segment string, index int, v
 	case parser.C_POP:
 
 		// Pop to R13
-		popToD(&code, fmt.Sprintf("[Start:WritePushPopStatic - pop(%v, %v, %v)] ", cmdType, segment, index))
+		code.WriteString(popToD(fmt.Sprintf("[Start:WritePushPopStatic - pop(%v, %v, %v)] ", cmdType, segment, index)))
 		code.WriteString("@13 // Load poped value to R13\r\n")
 		code.WriteString("M=D\r\n")
 
@@ -234,7 +238,8 @@ func WritePushPopStatic(cmdType parser.CommandType, segment string, index int, v
 		code.WriteString("D=M\r\n")
 
 		// Push
-		pushD(&code)
+		code.WriteString(pushD())
+
 	}
 	return code.String()
 }
@@ -268,7 +273,7 @@ func WriteGotoA() string {
 
 func WriteIf(label string) string {
 	var code bytes.Buffer
-	popToD(&code)
+	code.WriteString(popToD())
 	code.WriteString(fmt.Sprintf("@%v // [Start:WriteIf(%v)]\r\n", label, label))
 	code.WriteString("D;JNE\r\n")
 	return code.String()
@@ -276,7 +281,7 @@ func WriteIf(label string) string {
 
 func WriteIfJLE(label string) string {
 	var code bytes.Buffer
-	popToD(&code)
+	code.WriteString(popToD())
 	code.WriteString(fmt.Sprintf("@%v // [Start:WriteIfJEQ(%v)]\r\n", label, label))
 	code.WriteString("D;JLE\r\n")
 	return code.String()
@@ -370,27 +375,27 @@ func WriteCall(name string, nArgs int) string {
 	retLabel := generateUniqueLabel("RET")
 	code.WriteString(fmt.Sprintf("@%v // [Start:WriteCall(%v,%v)] Push return address\r\n", retLabel, name, nArgs))
 	code.WriteString("D=A\r\n")
-	pushD(&code)
+	code.WriteString(pushD())
 
 	// Save LCL
 	code.WriteString("@LCL\r\n")
 	code.WriteString("D=M\r\n")
-	pushD(&code)
+	code.WriteString(pushD())
 
 	// Save ARG
 	code.WriteString("@ARG\r\n")
 	code.WriteString("D=M\r\n")
-	pushD(&code)
+	code.WriteString(pushD())
 
 	// Save THIS
 	code.WriteString("@THIS\r\n")
 	code.WriteString("D=M\r\n")
-	pushD(&code)
+	code.WriteString(pushD())
 
 	// Save THAT
 	code.WriteString("@THAT\r\n")
 	code.WriteString("D=M\r\n")
-	pushD(&code)
+	code.WriteString(pushD())
 
 	// ARG = SP-n-5
 	code.WriteString("@SP\r\n")
