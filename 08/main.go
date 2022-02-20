@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,7 +14,7 @@ import (
 	"vm/parser"
 )
 
-func Compile(r io.Reader) string {
+func Compile(r io.Reader, vmName string, bootstrap bool) string {
 	p, err := parser.NewParser(r)
 	if err != nil {
 		log.Fatalf("Couldn't initialize parser : %v", err)
@@ -25,18 +26,26 @@ func Compile(r io.Reader) string {
 	p.Advance()
 
 	var b bytes.Buffer
+	if bootstrap {
+		b.WriteString(codewriter.Bootstrap())
+	}
 	for ; ; p.Advance() {
 		cmdType := p.CommandType()
 		switch cmdType {
 		case parser.C_PUSH, parser.C_POP:
-			arg1 := p.Arg1()
-			arg2s := p.Arg2()
-			arg2, err := strconv.Atoi(arg2s)
+			segment := p.Arg1()
+			arg2 := p.Arg2()
+			index, err := strconv.Atoi(arg2)
 			if err != nil {
-				log.Fatalf("Argument of push must be integer : %v", arg2)
+				log.Fatalf("Argument of push must be integer : %v", index)
 			}
-			c := codewriter.WritePushPop(cmdType, arg1, arg2)
-			b.WriteString(c)
+			if segment != "static" {
+				c := codewriter.WritePushPop(cmdType, segment, index)
+				b.WriteString(c)
+			} else {
+				c := codewriter.WritePushPopStatic(cmdType, segment, index, vmName)
+				b.WriteString(c)
+			}
 		case parser.C_LABEL:
 			label := p.Arg1()
 			c := codewriter.WriteLabel(label)
@@ -85,14 +94,19 @@ func Compile(r io.Reader) string {
 }
 
 func main() {
-	if len(os.Args) != 2 {
+	var (
+		bootstrap = flag.Bool("bootstrap", true, "Write bootstrap code or not")
+	)
+	flag.Parse()
+	args := flag.Args()
+	if flag.NArg() < 1 {
 		exe, _ := os.Executable()
-		fmt.Fprintf(os.Stderr, "Usage: %v <.vm dir>\n", filepath.Base(exe))
+		fmt.Fprintf(os.Stderr, "Usage: %v <.vm dir> -bootstrap=<true/false>]\n", filepath.Base(exe))
 		os.Exit(1)
 	}
 
-	vmDirPath, _ := filepath.Abs(os.Args[1])
-	var commands bytes.Buffer
+	vmDirPath, _ := filepath.Abs(args[0])
+	var asm bytes.Buffer
 
 	err := filepath.Walk(vmDirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -105,7 +119,8 @@ func main() {
 				fmt.Println(err)
 				return err
 			}
-			commands.Write(b)
+			vmName := info.Name()[0 : len(info.Name())-3]
+			asm.WriteString(Compile(bytes.NewReader(b), vmName, *bootstrap))
 		}
 		return nil
 	})
@@ -114,9 +129,8 @@ func main() {
 		log.Fatalf("Couldn't read .vm in the directory : %v", err)
 	}
 
-	c := Compile(bytes.NewReader(commands.Bytes()))
 	asmPath := filepath.Base(vmDirPath) + ".asm"
-	err = ioutil.WriteFile(asmPath, []byte(c), 644)
+	err = ioutil.WriteFile(asmPath, []byte(asm.String()), 644)
 	if err != nil {
 		log.Fatalf("Couldn't write .asm : %v, %v", asmPath, err)
 	}

@@ -11,6 +11,19 @@ import (
 
 var labelIndex int
 
+// Bootstrap code
+// SP=256
+// call Sys.init
+func Bootstrap() string {
+	var code bytes.Buffer
+	code.WriteString("@256\r\n")
+	code.WriteString("D=A\r\n")
+	code.WriteString("@SP\r\n")
+	code.WriteString("M=D\r\n")
+	code.WriteString(WriteCall("Sys.init", 0))
+	return code.String()
+}
+
 func pushD(code *bytes.Buffer, comment ...string) {
 	str := strings.Join(comment, ",")
 	code.WriteString(fmt.Sprintf("@SP // %vPush the value at the address in D\r\n", str))
@@ -190,6 +203,40 @@ func WritePushPop(cmdType parser.CommandType, segment string, index int) string 
 	}
 	return code.String()
 
+}
+
+func WritePushPopStatic(cmdType parser.CommandType, segment string, index int, vmName string) string {
+	var code bytes.Buffer
+	switch cmdType {
+	case parser.C_POP:
+
+		// Pop to R13
+		popToD(&code, fmt.Sprintf("[Start:WritePushPopStatic - pop(%v, %v, %v)] ", cmdType, segment, index))
+		code.WriteString("@13 // Load poped value to R13\r\n")
+		code.WriteString("M=D\r\n")
+
+		// Set static variable's address to D
+		code.WriteString(fmt.Sprintf("@%v.%v\r\n", vmName, index))
+		code.WriteString("D=A\r\n")
+		code.WriteString("@14\r\n")
+		code.WriteString("M=D\r\n")
+
+		// Write the value in R13 to the address in R14
+		code.WriteString("@13 // Write the value in R13 to the address in R14\r\n")
+		code.WriteString("D=M\r\n")
+		code.WriteString("@14\r\n")
+		code.WriteString("A=M\r\n")
+		code.WriteString("M=D\r\n")
+
+	case parser.C_PUSH:
+		// Set static variable's address to D
+		code.WriteString(fmt.Sprintf("@%v.%v\r\n", vmName, index))
+		code.WriteString("D=M\r\n")
+
+		// Push
+		pushD(&code)
+	}
+	return code.String()
 }
 
 func WriteLabel(label string) string {

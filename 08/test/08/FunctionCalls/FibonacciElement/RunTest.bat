@@ -1,7 +1,7 @@
 set ROOT=..\..\..\..\
 set TOOL=%ROOT%..\..\tools\
-set TARGET=SimpleAdd
+set TARGET=FibonacciElement
 
 go build  -o %ROOT%vm.exe %ROOT%
-%ROOT%vm.exe -bootstrap=false .
+%ROOT%vm.exe .
 %TOOL%CPUEmulator.bat %TARGET%.tst
