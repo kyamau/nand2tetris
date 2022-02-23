@@ -1,0 +1,41 @@
+
+/** class must be placed in the <class name>.jack **/
+
+class MyIntPair {
+  field int x; //
+  field int y;
+
+  constructor MyIntPair new(int a, int b){
+    // Argument's name and field'name must be different
+    let x = a;
+    let y = b;
+    return this;
+  }
+
+  method void print() {
+      do Output.printString("x=");
+      do Output.printInt(x);
+      do Output.printString(" y=");
+      do Output.printInt(y);
+      do Output.println();
+      return;
+  }
+
+  method void setX(int a) {
+    let x = a; 
+    return;
+  }
+
+  method int getX() {
+    return x;
+  }
+
+  method void setY(int a) {
+    let x = a; 
+    return;
+  }
+
+  method int getY() {
+    return x;
+  }
+}
