@@ -1,0 +1,14 @@
+class MyUtil {
+    function void printIntArray(Array a, int length){
+      var int i; // i = 0
+      while (i < length) {
+        do Output.printString("i=");
+        do Output.printInt(i);
+        do Output.printString(" a[i]=");
+        do Output.printInt(a[i]);
+        do Output.println();
+        let i = i + 1;
+      }
+      return;
+    }
+}

@@ -1,0 +1,65 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/09/HelloWorld/Main.jack
+
+
+/**  My first Jack program. */
+class Main {
+   function void main() {
+      /**
+      var is local variable declaration
+      var must be placed before other statements.
+      https://stackoverflow.com/questions/36885251/why-doesnt-this-minimal-jack-nand2tetris-program-compile
+      */
+      var int i; // initialized by 0
+      var int a;
+      var Array arr;
+      var MyIntPair pair;
+
+
+      let arr = Array.new(5);
+      let arr[0] = 9; let arr[1] = 8; let arr[2] = 7; let arr[3] = 6;let arr[4] = 5;
+
+      do Output.printString("This is my first Jack program!");
+      do Output.println();
+
+      do Output.printString("i=");
+      let i = 5;
+      do Output.printInt(i);
+      do Output.println();
+
+      do Output.printString("Loop start!");
+      do Output.println();
+
+      while (i > 0) {
+        let i = i -1;
+        do Output.printInt(i);
+        do Output.printString(",");
+        let arr[i] = arr[i] * 10;
+        do Output.printInt(arr[i]);
+        do Output.println();
+      }
+
+      do Output.printString("My function");
+      do Output.println();
+      do MyUtil.printIntArray(arr, 5);
+      do Output.println();
+      
+
+      do Output.printString("My class");
+      do Output.println();
+      let pair = MyIntPair.new(10,20);
+      do pair.print();
+
+      do pair.setX(100);
+      do pair.setY(200);
+      do pair.print();
+      //do Output.printInt(pair.x);
+
+
+      do Output.printString("Program ended");
+      do Output.println();
+      return;
+   }
+}
