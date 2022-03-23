@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,7 +18,7 @@ type Tokenizer struct {
 }
 
 type Token interface {
-	Token() string
+	String() string
 	Type() string
 }
 
@@ -36,7 +35,7 @@ type StrConst struct {
 	tokenType string
 }
 
-func (t *StrConst) Token() string {
+func (t *StrConst) String() string {
 	return t.token
 }
 
@@ -55,7 +54,7 @@ type Symbol struct {
 	tokenType string
 }
 
-func (t *Symbol) Token() string {
+func (t *Symbol) String() string {
 	return t.token
 }
 
@@ -95,8 +94,12 @@ type IntConst struct {
 	value     int
 }
 
-func (t *IntConst) Token() string {
+func (t *IntConst) String() string {
 	return t.token
+}
+
+func (t *IntConst) Int() int {
+	return t.value
 }
 
 func (t *IntConst) Type() string {
@@ -116,7 +119,7 @@ type Identifier struct {
 	tokenType string
 }
 
-func (t *Identifier) Token() string {
+func (t *Identifier) String() string {
 	return t.token
 }
 
@@ -133,7 +136,7 @@ type Keyword struct {
 	tokenType string
 }
 
-func (t *Keyword) Token() string {
+func (t *Keyword) String() string {
 	return t.token
 }
 
@@ -181,11 +184,12 @@ func (t *Tokenizer) TokenType() string {
 	return t.Current().Type()
 }
 
-func (t *Tokenizer) Advance() {
+func (t *Tokenizer) Advance() error {
 	if !t.HasMoreTokens() {
-		log.Fatal("No more tokens")
+		return errors.New("Couldn't advance. No more tokens.")
 	}
 	t.current++
+	return nil
 }
 
 var singleLineComment *regexp.Regexp = regexp.MustCompile(`(//).*`)
@@ -228,10 +232,10 @@ func tokenize(src string) ([]Token, error) {
 					var err error
 					t, err = NewIntConst(m)
 					if err != nil {
-						return nil, fmt.Errorf("Failed to tokenize. Invalid integer constant: %w", err)
+						return nil, fmt.Errorf("Invalid integer constant: %w", err)
 					}
 				default:
-					return nil, errors.New(fmt.Sprintf("Failed to tokenize failed. Unknown token: %v", m))
+					return nil, errors.New(fmt.Sprintf("Unknown token: %v", m))
 				}
 				tokens = append(tokens, t)
 			}
@@ -249,7 +253,7 @@ func (tokensXml TokensXml) MarshalXML(e *xml.Encoder, start xml.StartElement) er
 	start.Name.Local = "tokens"
 	e.EncodeToken(start)
 	for _, t := range tokensXml.Tokens {
-		e.EncodeElement(fmt.Sprintf(" %v ", t.Token()), xml.StartElement{Name: xml.Name{Local: t.Type()}})
+		e.EncodeElement(fmt.Sprintf(" %v ", t.String()), xml.StartElement{Name: xml.Name{Local: t.Type()}})
 	}
 	e.EncodeToken(start.End())
 	return nil
@@ -265,7 +269,7 @@ func (t *Tokenizer) Tokenize() error {
 	t.src = preprocess(t.src)
 	tokens, err := tokenize(t.src)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to tokenize: %v", err)
 	}
 	t.tokens = tokens
 	return nil
