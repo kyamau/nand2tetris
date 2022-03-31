@@ -22,6 +22,19 @@ type Token interface {
 	Type() string
 }
 
+type GenericToken struct {
+	token     string
+	tokenType string
+}
+
+func (t *GenericToken) String() string {
+	return t.token
+}
+
+func (t *GenericToken) Type() string {
+	return t.tokenType
+}
+
 const (
 	STR_CONST  = "stringConstant"
 	SYMBOL     = "symbol"
@@ -31,39 +44,21 @@ const (
 )
 
 type StrConst struct {
-	token     string
-	tokenType string
-}
-
-func (t *StrConst) String() string {
-	return t.token
-}
-
-func (t *StrConst) Type() string {
-	return t.tokenType
+	*GenericToken
 }
 
 func NewStrConst(s string) *StrConst {
 	s = strings.ReplaceAll(s, "\"", "")
 	s = strings.ReplaceAll(s, "\n", "")
-	return &StrConst{token: s, tokenType: "stringConstant"}
+	return &StrConst{&GenericToken{token: s, tokenType: "stringConstant"}}
 }
 
 type Symbol struct {
-	token     string
-	tokenType string
-}
-
-func (t *Symbol) String() string {
-	return t.token
-}
-
-func (t *Symbol) Type() string {
-	return t.tokenType
+	*GenericToken
 }
 
 func NewSymbol(s string) *Symbol {
-	return &Symbol{token: s, tokenType: SYMBOL}
+	return &Symbol{&GenericToken{token: s, tokenType: SYMBOL}}
 }
 
 const (
@@ -89,13 +84,8 @@ const (
 )
 
 type IntConst struct {
-	token     string
-	tokenType string
-	value     int
-}
-
-func (t *IntConst) String() string {
-	return t.token
+	*GenericToken
+	value int
 }
 
 func (t *IntConst) Int() int {
@@ -111,24 +101,15 @@ func NewIntConst(s string) (*IntConst, error) {
 	if value < 0 || value > 32768 {
 		return nil, errors.New(fmt.Sprintf("Integer constant must be in [0, 32768]: %v", value))
 	}
-	return &IntConst{token: s, tokenType: INT_CONST, value: value}, err
+	return &IntConst{GenericToken: &GenericToken{token: s, tokenType: INT_CONST}, value: value}, err
 }
 
 type Identifier struct {
-	token     string
-	tokenType string
-}
-
-func (t *Identifier) String() string {
-	return t.token
-}
-
-func (t *Identifier) Type() string {
-	return t.tokenType
+	*GenericToken
 }
 
 func NewIdentifier(s string) *Identifier {
-	return &Identifier{token: s, tokenType: "identifier"}
+	return &Identifier{&GenericToken{token: s, tokenType: "identifier"}}
 }
 
 type Keyword struct {
