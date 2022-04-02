@@ -20,11 +20,13 @@ type Tokenizer struct {
 type Token interface {
 	String() string
 	Type() string
+	Pos() []int
 }
 
 type GenericToken struct {
 	token     string
 	tokenType string
+	pos       []int
 }
 
 func (t *GenericToken) String() string {
@@ -33,6 +35,10 @@ func (t *GenericToken) String() string {
 
 func (t *GenericToken) Type() string {
 	return t.tokenType
+}
+
+func (t *GenericToken) Pos() []int {
+	return t.pos
 }
 
 const (
@@ -47,18 +53,18 @@ type StrConst struct {
 	*GenericToken
 }
 
-func NewStrConst(s string) *StrConst {
+func NewStrConst(s string, pos []int) *StrConst {
 	s = strings.ReplaceAll(s, "\"", "")
 	s = strings.ReplaceAll(s, "\n", "")
-	return &StrConst{&GenericToken{token: s, tokenType: "stringConstant"}}
+	return &StrConst{&GenericToken{token: s, tokenType: "stringConstant", pos: pos}}
 }
 
 type Symbol struct {
 	*GenericToken
 }
 
-func NewSymbol(s string) *Symbol {
-	return &Symbol{&GenericToken{token: s, tokenType: SYMBOL}}
+func NewSymbol(s string, pos []int) *Symbol {
+	return &Symbol{&GenericToken{token: s, tokenType: SYMBOL, pos: pos}}
 }
 
 const (
@@ -92,41 +98,28 @@ func (t *IntConst) Int() int {
 	return t.value
 }
 
-func (t *IntConst) Type() string {
-	return t.tokenType
-}
-
-func NewIntConst(s string) (*IntConst, error) {
+func NewIntConst(s string, pos []int) (*IntConst, error) {
 	value, err := strconv.Atoi(s)
 	if value < 0 || value > 32768 {
 		return nil, errors.New(fmt.Sprintf("Integer constant must be in [0, 32768]: %v", value))
 	}
-	return &IntConst{GenericToken: &GenericToken{token: s, tokenType: INT_CONST}, value: value}, err
+	return &IntConst{GenericToken: &GenericToken{token: s, tokenType: INT_CONST, pos: pos}, value: value}, err
 }
 
 type Identifier struct {
 	*GenericToken
 }
 
-func NewIdentifier(s string) *Identifier {
-	return &Identifier{&GenericToken{token: s, tokenType: "identifier"}}
+func NewIdentifier(s string, pos []int) *Identifier {
+	return &Identifier{&GenericToken{token: s, tokenType: "identifier", pos: pos}}
 }
 
 type Keyword struct {
-	token     string
-	tokenType string
+	*GenericToken
 }
 
-func (t *Keyword) String() string {
-	return t.token
-}
-
-func (t *Keyword) Type() string {
-	return t.tokenType
-}
-
-func NewKeyword(s string) *Keyword {
-	return &Keyword{token: s, tokenType: KEYWORD}
+func NewKeyword(s string, pos []int) *Keyword {
+	return &Keyword{&GenericToken{token: s, tokenType: KEYWORD, pos: pos}}
 }
 
 const (
@@ -161,16 +154,19 @@ func (t *Tokenizer) Current() Token {
 	return t.tokens[t.current]
 }
 
-func (t *Tokenizer) TokenType() string {
-	return t.Current().Type()
-}
-
 func (t *Tokenizer) Advance() error {
 	if !t.HasMoreTokens() {
 		return errors.New("Couldn't advance. No more tokens.")
 	}
 	t.current++
 	return nil
+}
+
+func (t *Tokenizer) LookAhead(offset int) (Token, error) {
+	if t.current+offset > len(t.tokens)-1 {
+		return nil, errors.New("Look ahead faild. Index out of range")
+	}
+	return t.tokens[t.current+offset], nil
 }
 
 var singleLineComment *regexp.Regexp = regexp.MustCompile(`(//).*`)
@@ -188,30 +184,70 @@ func preprocess(src string) string {
 
 var tokenRegexp *regexp.Regexp = regexp.MustCompile(`(?P<strConst>"[^"]+")|(?P<idOrKeyword>[a-zA-Z_][a-zA-Z0-9_]*)|(?P<symbol>[{}\(\)\[\]\.\,;\+\-\*\/&\|<>=~])|(?P<intConst>[0-9]+)`)
 
+var lf *regexp.Regexp = regexp.MustCompile(`\n`)
+
+func lineCountCummulativeMap(src string) map[int]int {
+	matches := lf.FindAllStringIndex(src, -1)
+	m := make(map[int]int, 0)
+	for _, j := range matches {
+		m[j[0]] += 1
+	}
+	return m
+}
+
+// Return array of [row,column] at each character index
+// Row and column start with 1.
+func charIndex2LineColumnArray(src string) [][]int {
+	matchedLFs := lf.FindAllStringIndex(src, -1)
+	lineColumn := make([][]int, len(src))
+	nLF := 0
+	posLF := matchedLFs[nLF][0]
+	prevPosLF := -1
+	for i := 0; i < len(lineColumn); i++ {
+		if posLF < i {
+			nLF++
+			prevPosLF = posLF
+			if nLF < len(matchedLFs) {
+				posLF = matchedLFs[nLF][0]
+			} else {
+				// No more LFs.
+				posLF = len(src)
+			}
+		}
+		currentLine := nLF + 1
+		currentColumn := i - prevPosLF // How many chars after previous LF
+		lineColumn[i] = []int{currentLine, currentColumn}
+	}
+	return lineColumn
+}
+
 func tokenize(src string) ([]Token, error) {
+	charIndex2LineColumn := charIndex2LineColumnArray(src)
 	tokens := make([]Token, 0)
-	matchs := tokenRegexp.FindAllStringSubmatch(src, -1)
+	matchStrings := tokenRegexp.FindAllStringSubmatch(src, -1) // Use capturing groups.
+	matchIndices := tokenRegexp.FindAllStringIndex(src, -1)
 	groupNames := tokenRegexp.SubexpNames()
-	for _, match := range matchs {
-		for i, name := range groupNames[1:] {
-			m := match[i+1]
+	for i, matchString := range matchStrings {
+		lineColumn := charIndex2LineColumn[matchIndices[i][0]]
+		for j, name := range groupNames[1:] { // SubexpNames()[0] is always empty.
+			m := matchString[j+1]
 			if m != "" {
 				var t Token
 				switch name {
 				case "strConst":
-					t = NewStrConst(m)
+					t = NewStrConst(m, lineColumn)
 				case "idOrKeyword":
 					switch m {
 					case CLASS, CONSTRUCTOR, FUNCTION, METHOD, FIELD, STATIC, VAR, INT, CHAR, BOOLEAN, VOID, TRUE, FALSE, NULL, THIS, LET, DO, IF, ELSE, WHILE, RETURN:
-						t = NewKeyword(m)
+						t = NewKeyword(m, lineColumn)
 					default:
-						t = NewIdentifier(m)
+						t = NewIdentifier(m, lineColumn)
 					}
 				case "symbol":
-					t = NewSymbol(m)
+					t = NewSymbol(m, lineColumn)
 				case "intConst":
 					var err error
-					t, err = NewIntConst(m)
+					t, err = NewIntConst(m, lineColumn)
 					if err != nil {
 						return nil, fmt.Errorf("Invalid integer constant: %w", err)
 					}
