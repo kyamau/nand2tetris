@@ -28,6 +28,8 @@ func TestTokenize(t *testing.T) {
 		{"symbol", args{"{}()[].,;+-*/&|<>=~"}, []Token{NewSymbol("{", pos), NewSymbol("}", pos), NewSymbol("(", pos), NewSymbol(")", pos), NewSymbol("[", pos), NewSymbol("]", pos), NewSymbol(".", pos), NewSymbol(",", pos), NewSymbol(";", pos), NewSymbol("+", pos), NewSymbol("-", pos), NewSymbol("*", pos), NewSymbol("/", pos), NewSymbol("&", pos), NewSymbol("|", pos), NewSymbol("<", pos), NewSymbol(">", pos), NewSymbol("=", pos), NewSymbol("~", pos)}},
 		{"integerConstant", args{"09"}, []Token{newIntConstIgnoreErr("09")}},
 		{"combination", args{"\"azAZあclass{09\n\"class class_09{123"}, []Token{NewStrConst("azAZあclass{09", pos), NewKeyword("class", pos), NewIdentifier("class_09", pos), NewSymbol("{", pos), newIntConstIgnoreErr("123")}},
+		{"single line comment", args{"code//comment\ncode"}, []Token{NewIdentifier("code", pos), NewIdentifier("code", pos)}},
+		{"multi line comment", args{"code/** comment1\ncomment2. */code"}, []Token{NewIdentifier("code", pos), NewIdentifier("code", pos)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,26 +81,26 @@ func isTokenEqualExceptPos(tokens1 []Token, tokens2 []Token) bool {
 	return true
 }
 
-func TestPreprocess(t *testing.T) {
-	type args struct {
-		src string
-	}
-	tests := []struct {
-		name string
-		args args
-		want string
-	}{
-		{"single line comment", args{"code//comment\ncode"}, "code\ncode"},
-		{"multi line comment", args{"code/** comment1\ncomment2. */code"}, "codecode"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := preprocess(tt.args.src); got != tt.want {
-				t.Errorf("preprocess() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+// func TestPreprocess(t *testing.T) {
+// 	type args struct {
+// 		src string
+// 	}
+// 	tests := []struct {
+// 		name string
+// 		args args
+// 		want string
+// 	}{
+// 		{"single line comment", args{"code//comment\ncode"}, "code\ncode"},
+// 		{"multi line comment", args{"code/** comment1\ncomment2. */code"}, "codecode"},
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			if got := preprocess(tt.args.src); got != tt.want {
+// 				t.Errorf("preprocess() = %v, want %v", got, tt.want)
+// 			}
+// 		})
+// 	}
+// }
 
 func TestXML(t *testing.T) {
 	r := strings.NewReader("\"test1\n\" class{123")

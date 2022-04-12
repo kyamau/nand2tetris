@@ -3,15 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"compiler/parser"
 	"compiler/tokenizer"
 )
 
-const (
-	SEP = "\r\n"
+var (
+	tokenizeOnly = flag.Bool("tokenize", false, "Tokenization only mode")
+	parse        = flag.Bool("parse", false, "Tokenization + Parsing mode")
 )
 
 func compile(srcPath string) error {
@@ -19,17 +23,48 @@ func compile(srcPath string) error {
 	if err != nil {
 		log.Fatalf("Failed to open .jack: %v", err)
 	}
+
+	// Tokenize
 	tokenizer, err := tokenizer.NewTokenizer(f)
 	if err != nil {
 		log.Fatalf("Failed to initialize tokenizer: %v", err)
 	}
 	err = tokenizer.Tokenize()
 	if err != nil {
+		return fmt.Errorf("Failed to tokenize: src=%v: %v", srcPath, err)
+	}
+
+	tokenXML := tokenizer.XML()
+	base := filepath.Base(srcPath)
+	filename := base[:strings.LastIndex(base, ".")] + "T.xml.out"
+	tokenDstPath := filepath.Join(filepath.Dir(srcPath), filename)
+	if os.Getenv("LOGLEVEL") == "debug" {
+		log.Printf("Tokenize output path=%v\n", tokenDstPath)
+	}
+	err = ioutil.WriteFile(tokenDstPath, []byte(tokenXML), 0666)
+	if err != nil {
+		return err
+	} else if *tokenizeOnly {
+		return nil
+	}
+
+	// Parse
+	parser := parser.NewParser(*tokenizer)
+	err = parser.Parse()
+	if err != nil {
+		return fmt.Errorf("Failed to parse: src=%v: %v", srcPath, err)
+	}
+
+	tokenSrcPath := filepath.Join(filepath.Dir(srcPath), filename) + ".xml.out"
+	if os.Getenv("LOGLEVEL") == "debug" {
+		log.Printf("Parse output path=%v\n", tokenDstPath)
+	}
+
+	err = ioutil.WriteFile(tokenSrcPath, []byte(parser.XML()), 0666)
+	if err != nil {
 		return err
 	}
-	xml := tokenizer.XML()
-	fmt.Print(xml)
-	return err
+	return nil
 }
 
 func main() {
@@ -38,7 +73,7 @@ func main() {
 	args := flag.Args()
 	if flag.NArg() < 1 {
 		exe, _ := os.Executable()
-		fmt.Fprintf(os.Stderr, "Usage: %v <.jack/.jack dir>]\n", filepath.Base(exe))
+		fmt.Fprintf(os.Stderr, "Usage: %v <.jack/.jack dir> [-tokenize | -parse]\n", filepath.Base(exe))
 		os.Exit(1)
 	}
 
@@ -66,7 +101,7 @@ func main() {
 	} else if filepath.Ext(srcPath) == ".jack" {
 		err = compile(srcPath)
 		if err != nil {
-			log.Fatalf("Failed to compile: %v", err)
+			log.Fatalf("Failed to compile %v: %v", srcPath, err)
 		}
 	}
 }

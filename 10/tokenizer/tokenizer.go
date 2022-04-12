@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -159,6 +161,16 @@ func (t *Tokenizer) Advance() error {
 		return errors.New("Couldn't advance. No more tokens.")
 	}
 	t.current++
+	if os.Getenv("LOGLEVEL") == "debug" {
+		log.Printf("Current Token: line=%v, column=%v, type=%v, string=%v", t.Current().Pos()[0], t.Current().Pos()[1], t.Current().Type(), t.Current().String())
+	}
+	return nil
+}
+func (t *Tokenizer) Backward() error {
+	t.current--
+	if os.Getenv("LOGLEVEL") == "debug" {
+		log.Printf("Current Token: line=%v, column=%v, type=%v, string=%v", t.Current().Pos()[0], t.Current().Pos()[1], t.Current().Type(), t.Current().String())
+	}
 	return nil
 }
 
@@ -169,20 +181,11 @@ func (t *Tokenizer) LookAhead(offset int) (Token, error) {
 	return t.tokens[t.current+offset], nil
 }
 
-var singleLineComment *regexp.Regexp = regexp.MustCompile(`(//).*`)
-var multiLineComment *regexp.Regexp = regexp.MustCompile(`(?s)(/\*\*).*?(\*/)`)
-var emptyLine *regexp.Regexp = regexp.MustCompile(`(?m)^\n`)
-
 func preprocess(src string) string {
 	// CRLF -> LF
 	src = strings.ReplaceAll(src, "\r\n", "\n")
-	src = singleLineComment.ReplaceAllString(src, "")
-	src = multiLineComment.ReplaceAllString(src, "")
-	src = emptyLine.ReplaceAllString(src, "")
 	return src
 }
-
-var tokenRegexp *regexp.Regexp = regexp.MustCompile(`(?P<strConst>"[^"]+")|(?P<idOrKeyword>[a-zA-Z_][a-zA-Z0-9_]*)|(?P<symbol>[{}\(\)\[\]\.\,;\+\-\*\/&\|<>=~])|(?P<intConst>[0-9]+)`)
 
 var lf *regexp.Regexp = regexp.MustCompile(`\n`)
 
@@ -199,6 +202,10 @@ func lineCountCummulativeMap(src string) map[int]int {
 // Row and column start with 1.
 func charIndex2LineColumnArray(src string) [][]int {
 	matchedLFs := lf.FindAllStringIndex(src, -1)
+	if len(matchedLFs) == 0 {
+		matchedLFs = [][]int{{len(src)}}
+	}
+
 	lineColumn := make([][]int, len(src))
 	nLF := 0
 	posLF := matchedLFs[nLF][0]
@@ -221,6 +228,8 @@ func charIndex2LineColumnArray(src string) [][]int {
 	return lineColumn
 }
 
+var tokenRegexp *regexp.Regexp = regexp.MustCompile(`(?P<multComment>(?s)(/\*\*).*?(\*/))|(?P<singleComment>(?P<slash>//).*)|(?P<emptyLine>(?m)^\n)|(?P<strConst>"[^"]+")|(?P<idOrKeyword>[a-zA-Z_][a-zA-Z0-9_]*)|(?P<symbol>[{}\(\)\[\]\.\,;\+\-\*\/&\|<>=~])|(?P<intConst>[0-9]+)`)
+
 func tokenize(src string) ([]Token, error) {
 	charIndex2LineColumn := charIndex2LineColumnArray(src)
 	tokens := make([]Token, 0)
@@ -229,11 +238,13 @@ func tokenize(src string) ([]Token, error) {
 	groupNames := tokenRegexp.SubexpNames()
 	for i, matchString := range matchStrings {
 		lineColumn := charIndex2LineColumn[matchIndices[i][0]]
-		for j, name := range groupNames[1:] { // SubexpNames()[0] is always empty.
+		for j, name := range groupNames[1:] { // SubexpNames()[0] is always empty. Ordered samely as the regex.
 			m := matchString[j+1]
 			if m != "" {
 				var t Token
 				switch name {
+				case "multComment", "singleComment", "emptyLine":
+					goto Skip
 				case "strConst":
 					t = NewStrConst(m, lineColumn)
 				case "idOrKeyword":
@@ -252,11 +263,13 @@ func tokenize(src string) ([]Token, error) {
 						return nil, fmt.Errorf("Invalid integer constant: %w", err)
 					}
 				default:
-					return nil, errors.New(fmt.Sprintf("Unknown token: %v", m))
+					continue
+					//return nil, errors.New(fmt.Sprintf("Unknown token: %v", m))
 				}
 				tokens = append(tokens, t)
 			}
 		}
+	Skip:
 	}
 	return tokens, nil
 }
@@ -299,6 +312,5 @@ func NewTokenizer(r io.Reader) (*Tokenizer, error) {
 		return nil, fmt.Errorf("Failed to read .jack: %v", err)
 	}
 	p := &Tokenizer{src, nil, 0}
-	fmt.Println("")
 	return p, nil
 }
