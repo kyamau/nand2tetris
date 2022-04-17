@@ -13,9 +13,10 @@ clean:
 	# See https://ir9ex.hatenablog.jp/entry/20121206/1354774247
 	-Remove-Item ./compiler.exe > $$null
 	-Remove-Item test/Square/*.out > $$null
+	-Remove-Item test/ExpressionLessSquare/*.out > $$null
 	-Remove-Item test/ArrayTest/*.out > $$null
 
-# Tests for tokinization
+# Tests for tokenization
 token_square: build
 	./compiler.exe -tokenize test/Square/Square.jack
 	./compiler.exe -tokenize test/Square/Main.jack
@@ -28,6 +29,7 @@ token_arraytest: build
 	./compiler.exe -tokenize test/ArrayTest/Main.jack
 	$(TOOL_DIR)\TextComparer.bat test/ArrayTest/MainT.xml test/ArrayTest/MainT.xml.out
 
+# Tests for parsing
 parse_arraytest: build
 	./compiler.exe -tokenize test/ArrayTest/Main.jack
 	$(TOOL_DIR)\TextComparer.bat test/ArrayTest/Main.xml.out test/ArrayTest/Main.xml

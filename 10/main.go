@@ -36,8 +36,8 @@ func compile(srcPath string) error {
 
 	tokenXML := tokenizer.XML()
 	base := filepath.Base(srcPath)
-	filename := base[:strings.LastIndex(base, ".")] + "T.xml.out"
-	tokenDstPath := filepath.Join(filepath.Dir(srcPath), filename)
+	tokenFilename := base[:strings.LastIndex(base, ".")] + "T.xml.out"
+	tokenDstPath := filepath.Join(filepath.Dir(srcPath), tokenFilename)
 	if os.Getenv("LOGLEVEL") == "debug" {
 		log.Printf("Tokenize output path=%v\n", tokenDstPath)
 	}
@@ -55,12 +55,14 @@ func compile(srcPath string) error {
 		return fmt.Errorf("Failed to parse: src=%v: %v", srcPath, err)
 	}
 
-	tokenSrcPath := filepath.Join(filepath.Dir(srcPath), filename) + ".xml.out"
+	treeXML := parser.XML()
+	treeFileName := base[:strings.LastIndex(base, ".")] + ".xml.out"
+	treeDstPath := filepath.Join(filepath.Dir(srcPath), treeFileName)
 	if os.Getenv("LOGLEVEL") == "debug" {
-		log.Printf("Parse output path=%v\n", tokenDstPath)
+		log.Printf("Parse output path=%v\n", treeDstPath)
 	}
 
-	err = ioutil.WriteFile(tokenSrcPath, []byte(parser.XML()), 0666)
+	err = ioutil.WriteFile(treeDstPath, []byte(treeXML), 0666)
 	if err != nil {
 		return err
 	}
