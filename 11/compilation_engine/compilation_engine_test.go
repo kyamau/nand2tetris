@@ -1,4 +1,4 @@
-package parser
+package compilation_engine
 
 import (
 	. "compiler/tokenizer"
@@ -15,8 +15,8 @@ func setupTokenizer(content string) *Tokenizer {
 	return tokenizer
 }
 
-func setupParser(src string) *Parser {
-	return &Parser{*setupTokenizer(src), nil}
+func setupParser(src string) *CompilationEngine {
+	return &CompilationEngine{*setupTokenizer(src), nil}
 }
 
 func TestParser_XML(t *testing.T) {
@@ -54,25 +54,30 @@ func TestParser_XML(t *testing.T) {
       <identifier> Asize </identifier>
     </parameterList>
     <symbol> ) </symbol>
-    <subroutineBody></subroutineBody>
+    <subroutineBody>
+      <symbol> { </symbol>
+      <statements>
+      </statements>
+      <symbol> } </symbol>
+    </subroutineBody>
   </subroutineDec>
   <symbol> } </symbol>
 </class>`
 	tests := []struct {
 		name string
-		p    *Parser
+		ce   *CompilationEngine
 		want string
 	}{
-		{name: "simple_class", p: setupParser(src1), want: ans1},
-		{name: "simple_subroutine", p: setupParser(src2), want: ans2},
+		{name: "simple_class", ce: setupParser(src1), want: ans1},
+		{name: "simple_subroutine", ce: setupParser(src2), want: ans2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.p.Parse()
+			err := tt.ce.Parse()
 			if err != nil {
 				t.Error(err)
 			}
-			if got := tt.p.XML(); got != tt.want {
+			if got := tt.ce.XML(); got != tt.want {
 				t.Errorf("Parser.XML() = %v, want %v, diff=%v", got, tt.want, cmp.Diff(tt.want, got))
 			}
 		})

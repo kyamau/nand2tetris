@@ -9,13 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"compiler/parser"
+	"compiler/compilation_engine"
 	"compiler/tokenizer"
 )
 
 var (
 	tokenizeOnly = flag.Bool("tokenize", false, "Tokenization only mode")
-	parse        = flag.Bool("parse", false, "Tokenization + Parsing mode")
 )
 
 func compile(srcPath string) error {
@@ -48,14 +47,15 @@ func compile(srcPath string) error {
 		return nil
 	}
 
-	// Parse
-	parser := parser.NewParser(*tokenizer)
-	err = parser.Parse()
+	// Compile
+	ce := compilation_engine.NewCompilationEngine(*tokenizer)
+	err = ce.Compile()
 	if err != nil {
 		return fmt.Errorf("Failed to parse: src=%v: %v", srcPath, err)
 	}
 
-	treeXML := parser.XML()
+	// Write parse tree
+	treeXML := ce.XML()
 	treeFileName := base[:strings.LastIndex(base, ".")] + ".xml.out"
 	treeDstPath := filepath.Join(filepath.Dir(srcPath), treeFileName)
 	if os.Getenv("LOGLEVEL") == "debug" {
