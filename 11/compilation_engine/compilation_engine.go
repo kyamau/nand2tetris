@@ -2,6 +2,7 @@ package compilation_engine
 
 import (
 	"bytes"
+	. "compiler/symbol_table"
 	. "compiler/tokenizer"
 	"encoding/xml"
 	"errors"
@@ -10,12 +11,13 @@ import (
 )
 
 type CompilationEngine struct {
-	t    Tokenizer
-	root Elem
+	t      Tokenizer
+	root   Elem
+	tables []*SymbolTable // tables[0] for class, tables[1] for method
 }
 
 func NewCompilationEngine(t Tokenizer) *CompilationEngine {
-	return &CompilationEngine{t, nil}
+	return &CompilationEngine{t, nil, make([]*SymbolTable, 2)}
 }
 
 func (ce *CompilationEngine) Compile() error {
@@ -25,6 +27,14 @@ func (ce *CompilationEngine) Compile() error {
 		return err
 	}
 	return nil
+}
+
+func (ce *CompilationEngine) ClassTable() *SymbolTable {
+	return ce.tables[0]
+}
+
+func (ce *CompilationEngine) MethodTable() *SymbolTable {
+	return ce.tables[1]
 }
 
 var emptyXmlElem *regexp.Regexp = regexp.MustCompile(`( +)(<[a-zA-Z]+>)(</[a-zA-Z]+>)`)
@@ -39,14 +49,9 @@ func format(xmlStr string) string {
 
 func (ce *CompilationEngine) XML() string {
 	buf, _ := xml.MarshalIndent(ce.root, "", "  ")
-	xmlStr := format(string(buf))
+	xmlStr := format(string(buf)) + "\n"
 	return xmlStr
 }
-
-const (
-	TOKEN_ELEM  = "TOKEN"
-	SYNTAX_ELEM = "SYNTAX"
-)
 
 type Elem interface {
 	AddChild(c Elem)
@@ -223,6 +228,8 @@ func (ce *CompilationEngine) compileClass() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Class name wasn't an identifier: %v", err)
 	}
+	// Add symbol table for class
+	ce.tables[0] = NewEmptyClassSymbolTable(ce.t.Current().String())
 	class.AddChild(ce.NewTokenElemCurrent())
 
 	// {
@@ -268,9 +275,18 @@ func (ce *CompilationEngine) compileClass() (Elem, error) {
 func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 	classVarDec := NewSyntaxElem("classVarDec")
 
+	var varType string
+	var varKind string
+
 	// static or field
-	if !ce.isCurrentEqualTo(KEYWORD, "static") && !ce.isCurrentEqualTo(KEYWORD, "field") {
+	isStatic := ce.isCurrentEqualTo(KEYWORD, "static")
+	isField := ce.isCurrentEqualTo(KEYWORD, "field")
+	if !isStatic && !isField {
 		return nil, compileError(errors.New("Invalid class var declaration."), ce.t.Current())
+	} else if isStatic {
+		varKind = STATIC
+	} else {
+		varKind = FIELD
 	}
 	classVarDec.AddChild(ce.NewTokenElemCurrent())
 
@@ -280,7 +296,9 @@ func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 	}
+	varType = ce.t.Current().String()
 	classVarDec.AddChild(ce.NewTokenElemCurrent())
+
 	for {
 		// varName
 		ce.t.Advance()
@@ -288,6 +306,8 @@ func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Invalid var name: %v ", err)
 		}
+		// Add entry for the last symbol table
+		ce.ClassTable().Define(ce.t.Current().String(), varType, varKind)
 		classVarDec.AddChild(ce.NewTokenElemCurrent())
 
 		next, err := ce.t.LookAhead(1)
@@ -340,6 +360,7 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Invalid subroutine declaration: %v", err)
 	}
+	symbolTableName := ce.t.Current().String()
 	subroutineDec.AddChild(ce.NewTokenElemCurrent())
 
 	// (
@@ -349,6 +370,9 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 		return nil, fmt.Errorf("Invalid subroutine declaration: %v", err)
 	}
 	subroutineDec.AddChild(ce.NewTokenElemCurrent())
+
+	// Add symbol table for this method
+	ce.tables[1] = NewEmptyMethodSymbolTable(symbolTableName)
 
 	ce.t.Advance()
 	parameterList, err := ce.compileParameterList()
@@ -429,14 +453,19 @@ func (ce *CompilationEngine) compileVarDec() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 	}
+	varType := ce.t.Current().String()
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
 	// varName
 	ce.t.Advance()
+	varName := ce.t.Current().String()
 	err = ce.validateCurrentType(IDENTIFIER)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 	}
+
+	// Add var to symbol table
+	ce.MethodTable().Define(varName, varType, "var")
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
 	for {
@@ -482,6 +511,8 @@ func (ce *CompilationEngine) compileParameterList() (Elem, error) {
 		if err != nil {
 			return nil, err
 		}
+		varType := ce.t.Current().String()
+		varKind := "argument"
 		parameterList.AddChild(ce.NewTokenElemCurrent())
 
 		ce.t.Advance()
@@ -489,6 +520,9 @@ func (ce *CompilationEngine) compileParameterList() (Elem, error) {
 		if err != nil {
 			return nil, err
 		}
+		varName := ce.t.Current().String()
+		// Add arguments to the symbol table
+		ce.MethodTable().Define(varName, varType, varKind)
 		parameterList.AddChild(ce.NewTokenElemCurrent())
 
 		aheadToken, err := ce.t.LookAhead(1)

@@ -2,6 +2,7 @@ package compilation_engine
 
 import (
 	. "compiler/tokenizer"
+	"io/ioutil"
 	"strings"
 	"testing"
 
@@ -15,65 +16,31 @@ func setupTokenizer(content string) *Tokenizer {
 	return tokenizer
 }
 
-func setupParser(src string) *CompilationEngine {
-	return &CompilationEngine{*setupTokenizer(src), nil}
+func setupCompilationEngine(src string) *CompilationEngine {
+	return NewCompilationEngine(*setupTokenizer(src))
 }
 
-func TestParser_XML(t *testing.T) {
-	src1 := `
-		class Foo {
-		}`
-	ans1 := `<class>
-  <keyword> class </keyword>
-  <identifier> Foo </identifier>
-  <symbol> { </symbol>
-  <symbol> } </symbol>
-</class>`
-	src2 := `
-		class Square {
-			constructor Square new(int Ax, int Ay, int Asize) {
-			}
-		}`
-	ans2 := `<class>
-  <keyword> class </keyword>
-  <identifier> Square </identifier>
-  <symbol> { </symbol>
-  <subroutineDec>
-    <keyword> constructor </keyword>
-    <identifier> Square </identifier>
-    <identifier> new </identifier>
-    <symbol> ( </symbol>
-    <parameterList>
-      <keyword> int </keyword>
-      <identifier> Ax </identifier>
-      <symbol> , </symbol>
-      <keyword> int </keyword>
-      <identifier> Ay </identifier>
-      <symbol> , </symbol>
-      <keyword> int </keyword>
-      <identifier> Asize </identifier>
-    </parameterList>
-    <symbol> ) </symbol>
-    <subroutineBody>
-      <symbol> { </symbol>
-      <statements>
-      </statements>
-      <symbol> } </symbol>
-    </subroutineBody>
-  </subroutineDec>
-  <symbol> } </symbol>
-</class>`
+func readAsString(path string) string {
+	file, _ := ioutil.ReadFile(path)
+	return string(file)
+
+}
+func TestCompilationEngine_XML(t *testing.T) {
+	simpleClassSrc := readAsString("./test/simple_class.jack")
+	simpleClassAns := readAsString("./test/simple_class.xml")
+	simpleSubroutineSrc := readAsString("./test/simple_subroutine.jack")
+	simpleSubroutineAns := readAsString("./test/simple_subroutine.xml")
 	tests := []struct {
 		name string
 		ce   *CompilationEngine
 		want string
 	}{
-		{name: "simple_class", ce: setupParser(src1), want: ans1},
-		{name: "simple_subroutine", ce: setupParser(src2), want: ans2},
+		{name: "simple_class", ce: setupCompilationEngine(simpleClassSrc), want: simpleClassAns},
+		{name: "simple_subroutine", ce: setupCompilationEngine(simpleSubroutineSrc), want: simpleSubroutineAns},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.ce.Parse()
+			err := tt.ce.Compile()
 			if err != nil {
 				t.Error(err)
 			}
