@@ -2,6 +2,7 @@ package compilation_engine
 
 import (
 	. "compiler/tokenizer"
+	"compiler/vmwriter"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ func setupTokenizer(content string) *Tokenizer {
 }
 
 func setupCompilationEngine(src string) *CompilationEngine {
-	return NewCompilationEngine(*setupTokenizer(src))
+	return NewCompilationEngine(*setupTokenizer(src), vmwriter.VMWriter{})
 }
 
 func readAsString(path string) string {

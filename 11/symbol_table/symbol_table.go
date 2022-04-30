@@ -56,3 +56,7 @@ func (s *SymbolTable) IndexOf(varName string) (bool, int) {
 	}
 	return false, -1
 }
+
+func (s *SymbolTable) Name() string {
+	return s.name
+}

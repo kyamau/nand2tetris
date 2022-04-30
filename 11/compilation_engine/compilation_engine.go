@@ -4,20 +4,99 @@ import (
 	"bytes"
 	. "compiler/symbol_table"
 	. "compiler/tokenizer"
+	. "compiler/vmwriter"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"regexp"
 )
 
-type CompilationEngine struct {
-	t      Tokenizer
-	root   Elem
-	tables []*SymbolTable // tables[0] for class, tables[1] for method
+type Elem interface {
+	AddChild(c Elem)
+	GetChildren() []Elem
+	MarshalXML(enc *xml.Encoder, start xml.StartElement) error
+	String() string
 }
 
-func NewCompilationEngine(t Tokenizer) *CompilationEngine {
-	return &CompilationEngine{t, nil, make([]*SymbolTable, 2)}
+type BaseElem struct {
+	elemName string
+	children []Elem
+}
+
+func (e *BaseElem) AddChild(c Elem) {
+	e.children = append(e.children, c)
+}
+
+func (e *BaseElem) GetChildren() []Elem {
+	return e.children
+}
+
+func (e *BaseElem) String() string {
+	var b bytes.Buffer
+	b.WriteString(fmt.Sprintf("elemName=%v\n", e.elemName))
+	for _, child := range e.children {
+		b.WriteString(child.String())
+	}
+	return b.String()
+}
+
+type TokenElem struct {
+	*BaseElem
+	token Token
+}
+
+func (e *TokenElem) String() string {
+	return fmt.Sprintf("elemName=%v, tokenString=%v\n", e.elemName, e.token.String())
+}
+
+func (e *TokenElem) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
+	enc.EncodeElement(fmt.Sprintf(" %v ", e.token.String()), xml.StartElement{Name: xml.Name{Local: e.elemName}})
+	return nil
+}
+
+func NewTokenElem(token Token) Elem {
+	e := TokenElem{BaseElem: &BaseElem{elemName: token.Type(), children: make([]Elem, 0)}, token: token}
+	return &e
+}
+
+type SyntaxElem struct {
+	*BaseElem
+}
+
+func (e *SyntaxElem) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
+	start.Name.Local = e.elemName
+	enc.EncodeToken(start)
+	for _, child := range e.children {
+		child.MarshalXML(enc, start)
+	}
+	enc.EncodeToken(start.End())
+	return nil
+}
+
+func NewSyntaxElem(name string) Elem {
+	e := SyntaxElem{BaseElem: &BaseElem{elemName: name, children: []Elem{}}}
+	return &e
+}
+
+type VarElem struct {
+	*SyntaxElem
+	nLocals int
+}
+
+func NewVarElem(name string) VarElem {
+	return VarElem{SyntaxElem: &SyntaxElem{BaseElem: &BaseElem{elemName: name, children: []Elem{}}},
+		nLocals: 0}
+}
+
+type CompilationEngine struct {
+	t        Tokenizer
+	root     Elem
+	tables   []*SymbolTable // tables[0] for class, tables[1] for method
+	vmwriter VMWriter
+}
+
+func NewCompilationEngine(t Tokenizer, vmWriter VMWriter) *CompilationEngine {
+	return &CompilationEngine{t, nil, make([]*SymbolTable, 2), vmWriter}
 }
 
 func (ce *CompilationEngine) Compile() error {
@@ -53,66 +132,12 @@ func (ce *CompilationEngine) XML() string {
 	return xmlStr
 }
 
-type Elem interface {
-	AddChild(c Elem)
-	MarshalXML(enc *xml.Encoder, start xml.StartElement) error
-	String() string
-}
-
-type BaseElem struct {
-	elemName string
-	children []Elem
-}
-
-func (e *BaseElem) AddChild(c Elem) {
-	e.children = append(e.children, c)
-}
-
-func (e *BaseElem) String() string {
-	var b bytes.Buffer
-	b.WriteString(fmt.Sprintf("elemName=%v\n", e.elemName))
-	for _, child := range e.children {
-		b.WriteString(child.String())
+func (ce *CompilationEngine) WriteCode(filepath string) error {
+	err := WriteCode(ce.vmwriter.Code(), filepath)
+	if err != nil {
+		return fmt.Errorf("Failed to write VM code: %v", err)
 	}
-	return b.String()
-}
-
-type TokenElem struct {
-	*BaseElem
-	token Token
-}
-
-func (e *TokenElem) String() string {
-	return fmt.Sprintf("elemName=%v, tokenString=%v\n", e.elemName, e.token.String())
-}
-
-func (e *TokenElem) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
-	enc.EncodeElement(fmt.Sprintf(" %v ", e.token.String()), xml.StartElement{Name: xml.Name{Local: e.elemName}})
 	return nil
-}
-
-type SyntaxElem struct {
-	*BaseElem
-}
-
-func (e *SyntaxElem) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
-	start.Name.Local = e.elemName
-	enc.EncodeToken(start)
-	for _, child := range e.children {
-		child.MarshalXML(enc, start)
-	}
-	enc.EncodeToken(start.End())
-	return nil
-}
-
-func NewTokenElem(token Token) Elem {
-	e := TokenElem{BaseElem: &BaseElem{elemName: token.Type(), children: make([]Elem, 0)}, token: token}
-	return &e
-}
-
-func NewSyntaxElem(name string) Elem {
-	e := SyntaxElem{BaseElem: &BaseElem{elemName: name, children: make([]Elem, 0)}}
-	return &e
 }
 
 func (ce *CompilationEngine) NewTokenElemCurrent() Elem {
@@ -228,9 +253,9 @@ func (ce *CompilationEngine) compileClass() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Class name wasn't an identifier: %v", err)
 	}
+	class.AddChild(ce.NewTokenElemCurrent())
 	// Add symbol table for class
 	ce.tables[0] = NewEmptyClassSymbolTable(ce.t.Current().String())
-	class.AddChild(ce.NewTokenElemCurrent())
 
 	// {
 	ce.t.Advance()
@@ -306,9 +331,9 @@ func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Invalid var name: %v ", err)
 		}
+		classVarDec.AddChild(ce.NewTokenElemCurrent())
 		// Add entry for the last symbol table
 		ce.ClassTable().Define(ce.t.Current().String(), varType, varKind)
-		classVarDec.AddChild(ce.NewTokenElemCurrent())
 
 		next, err := ce.t.LookAhead(1)
 		if err != nil {
@@ -360,8 +385,9 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Invalid subroutine declaration: %v", err)
 	}
-	symbolTableName := ce.t.Current().String()
 	subroutineDec.AddChild(ce.NewTokenElemCurrent())
+	subroutineName := ce.ClassTable().Name() + "." + ce.t.Current().String()
+	symbolTableName := subroutineName
 
 	// (
 	ce.t.Advance()
@@ -395,6 +421,17 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 		return nil, err
 	}
 	subroutineDec.AddChild(subroutineBody)
+
+	// Sum of number of local variables belonging to the subroutine
+	nLocals := 0
+	for _, elem := range subroutineBody.GetChildren() {
+		if varElem, ok := elem.(VarElem); ok {
+			nLocals += varElem.nLocals
+		}
+	}
+
+	// Write function code
+	ce.vmwriter.Add(Function(subroutineName, nLocals))
 	return subroutineDec, nil
 }
 
@@ -437,8 +474,8 @@ func (ce *CompilationEngine) compileSubroutineBody() (Elem, error) {
 	return subroutineBody, nil
 }
 
-func (ce *CompilationEngine) compileVarDec() (Elem, error) {
-	varDec := NewSyntaxElem("varDec")
+func (ce *CompilationEngine) compileVarDec() (*VarElem, error) {
+	varDec := NewVarElem("varDec")
 
 	// var
 	err := ce.validateCurrent(KEYWORD, "var")
@@ -453,21 +490,24 @@ func (ce *CompilationEngine) compileVarDec() (Elem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 	}
-	varType := ce.t.Current().String()
 	varDec.AddChild(ce.NewTokenElemCurrent())
+	varType := ce.t.Current().String()
 
 	// varName
 	ce.t.Advance()
-	varName := ce.t.Current().String()
 	err = ce.validateCurrentType(IDENTIFIER)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
+		return nil, fmt.Errorf("Invalid var declaration: %v", compileError(err, ce.t.Current()))
 	}
-
-	// Add var to symbol table
-	ce.MethodTable().Define(varName, varType, "var")
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
+	// Add var to symbol table
+	varName := ce.t.Current().String()
+	ce.MethodTable().Define(varName, varType, "var")
+
+	varDec.nLocals++
+
+	// If there are more variables, continue reading
 	for {
 		next, err := ce.t.LookAhead(1)
 		if err != nil {
@@ -487,6 +527,12 @@ func (ce *CompilationEngine) compileVarDec() (Elem, error) {
 			return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 		}
 		varDec.AddChild(ce.NewTokenElemCurrent())
+
+		// Add var to symbol table
+		varName = ce.t.Current().String()
+		ce.MethodTable().Define(varName, varType, "var")
+
+		varDec.nLocals++
 	}
 	// ;
 	ce.t.Advance()
@@ -496,7 +542,7 @@ func (ce *CompilationEngine) compileVarDec() (Elem, error) {
 	}
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
-	return varDec, nil
+	return &varDec, nil
 }
 
 func (ce *CompilationEngine) compileParameterList() (Elem, error) {

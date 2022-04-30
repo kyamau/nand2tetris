@@ -11,6 +11,7 @@ import (
 
 	"compiler/compilation_engine"
 	"compiler/tokenizer"
+	"compiler/vmwriter"
 )
 
 var (
@@ -47,8 +48,10 @@ func compile(srcPath string) error {
 		return nil
 	}
 
+	vmWriter, err := vmwriter.NewVMWriter()
+
 	// Compile
-	ce := compilation_engine.NewCompilationEngine(*tokenizer)
+	ce := compilation_engine.NewCompilationEngine(*tokenizer, *vmWriter)
 	err = ce.Compile()
 	if err != nil {
 		return fmt.Errorf("Failed to parse: src=%v: %v", srcPath, err)
@@ -66,6 +69,12 @@ func compile(srcPath string) error {
 	if err != nil {
 		return err
 	}
+
+	// Write VM code
+	vmFilename := base[:strings.LastIndex(base, ".")] + ".vm.out"
+	vmDstPath := filepath.Join(filepath.Dir(srcPath), vmFilename)
+	ce.WriteCode(vmDstPath)
+
 	return nil
 }
 
