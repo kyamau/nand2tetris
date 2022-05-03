@@ -6,8 +6,33 @@ import (
 	"strings"
 )
 
+type Stack struct {
+	stack []string
+	sp    int
+}
+
+func NewStack() *Stack {
+	return &Stack{[]string{}, -1}
+}
+
+func (s *Stack) Push(e string) {
+	s.stack = append(s.stack, e)
+	s.sp++
+}
+
+func (s *Stack) Pop() (string, bool) {
+	if s.sp-1 < 0 {
+		return "", false
+	}
+	poped := s.stack[s.sp-1]
+	s.stack = s.stack[:s.sp-1]
+	s.sp--
+	return poped, true
+}
+
 type VMWriter struct {
-	lines []string
+	lines         []string
+	OperatorStack Stack
 }
 
 func (w *VMWriter) Add(code string) {
@@ -19,7 +44,7 @@ func (w *VMWriter) Code() []string {
 }
 
 func NewVMWriter() (*VMWriter, error) {
-	vmWriter := VMWriter{make([]string, 0)}
+	vmWriter := VMWriter{[]string{}, Stack{}}
 	return &vmWriter, nil
 }
 
@@ -31,38 +56,38 @@ func WriteCode(vmCode []string, filepath string) error {
 	return nil
 }
 
-func Push(segment string, index int) string {
+func PushCode(segment string, index int) string {
 	return fmt.Sprintf("push %s %d", segment, index)
 }
 
-func Pop(segment string, index int) string {
+func PopCode(segment string, index int) string {
 	return fmt.Sprintf("pop %s %d", segment, index)
 }
 
-func Arithmetic(command string) string {
+func ArithmeticCode(command string) string {
 	return command
 }
 
-func Label(label string) string {
+func LabelCode(label string) string {
 	return fmt.Sprintf("label %s", label)
 }
 
-func Goto(label string) string {
+func GotoCode(label string) string {
 	return fmt.Sprintf("goto %s", label)
 }
 
-func If(label string) string {
+func IfCode(label string) string {
 	return fmt.Sprintf("if-goto %s", label)
 }
 
-func Function(name string, nLocals int) string {
+func FunctionCode(name string, nLocals int) string {
 	return fmt.Sprintf("function %s %d", name, nLocals)
 }
 
-func Call(name string, nArgs int) string {
+func CallCode(name string, nArgs int) string {
 	return fmt.Sprintf("call %s %d", name, nArgs)
 }
 
-func Return(name string, nArgs int) string {
+func ReturnCode() string {
 	return fmt.Sprintf("return")
 }

@@ -12,40 +12,25 @@ $(BINARIES): $(GO_FILES)
 clean: 
 	# See https://ir9ex.hatenablog.jp/entry/20121206/1354774247
 	-Remove-Item ./compiler.exe > $$null
-	-Remove-Item test/Square/*.out > $$null
-	-Remove-Item test/ExpressionLessSquare/*.out > $$null
-	-Remove-Item test/ArrayTest/*.out > $$null
-
-# Tests for tokenization
-token_square: build
-	./compiler.exe -tokenize test/Square/Square.jack
-	./compiler.exe -tokenize test/Square/Main.jack
-	./compiler.exe -tokenize test/Square/SquareGame.jack
-	$(TOOL_DIR)\TextComparer.bat ./test/Square/SquareT.xml  ./test/Square/SquareT.xml.out
-	$(TOOL_DIR)\TextComparer.bat ./test/Square/MainT.xml  ./test/Square/MainT.xml.out
-	$(TOOL_DIR)\TextComparer.bat ./test/Square/SquareGameT.xml  ./test/Square/SquareGameT.xml.out
-
-token_arraytest: build
-	./compiler.exe -tokenize test/ArrayTest/Main.jack
-	$(TOOL_DIR)\TextComparer.bat test/ArrayTest/MainT.xml test/ArrayTest/MainT.xml.out
+	-Remove-Item -Recurse test/*.out > $$null
 
 # Tests for parsing
-parse_arraytest: build
-	./compiler.exe -tokenize test/ArrayTest/Main.jack
-	$(TOOL_DIR)\TextComparer.bat test/ArrayTest/Main.xml.out test/ArrayTest/Main.xml
+test_parser: build test_parser/ArrayTest test_parser/ExpressionLessSquare test_parser/Square
 
-parse_explesssquare: build 
-	./compiler.exe test/ExpressionLessSquare/
-	$(TOOL_DIR)\TextComparer.bat test/ExpressionLessSquare/Main.xml.out test/ExpressionLessSquare/Main.xml
-	$(TOOL_DIR)\TextComparer.bat test/ExpressionLessSquare/Square.xml.out test/ExpressionLessSquare/Square.xml
-	$(TOOL_DIR)\TextComparer.bat test/ExpressionLessSquare/SquareGame.xml.out test/ExpressionLessSquare/SquareGame.xml
+test_parser/ArrayTest: build
+	./compiler.exe $@
+	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
-parse_square: build 
-	./compiler.exe test/Square/
-	$(TOOL_DIR)\TextComparer.bat test/Square/Main.xml.out test/Square/Main.xml
-	$(TOOL_DIR)\TextComparer.bat test/Square/Square.xml.out test/Square/Square.xml
-	$(TOOL_DIR)\TextComparer.bat test/Square/SquareGame.xml.out test/Square/SquareGame.xml
+test_parser/ExpressionLessSquare: build
+	./compiler.exe $@
+	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
+test_parser/Square: build
+	./compiler.exe $@
+	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
-test: build token_square token_arraytest parse_arraytest parse_explesssquare parse_square
-
+# Test for code generation
+ test/Seven: build
+	./compiler.exe $@
+	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	

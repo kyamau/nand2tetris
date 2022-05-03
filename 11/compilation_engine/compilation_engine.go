@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 )
 
 type Elem interface {
@@ -86,6 +87,16 @@ type VarElem struct {
 func NewVarElem(name string) VarElem {
 	return VarElem{SyntaxElem: &SyntaxElem{BaseElem: &BaseElem{elemName: name, children: []Elem{}}},
 		nLocals: 0}
+}
+
+type ExpressionListElem struct {
+	*SyntaxElem
+	nExpressions int
+}
+
+func NewExpressionListElem(name string) ExpressionListElem {
+	return ExpressionListElem{SyntaxElem: &SyntaxElem{BaseElem: &BaseElem{elemName: name, children: []Elem{}}},
+		nExpressions: 0}
 }
 
 type CompilationEngine struct {
@@ -416,26 +427,16 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 
 	// subroutineBody
 	ce.t.Advance()
-	subroutineBody, err := ce.compileSubroutineBody()
+	subroutineBody, err := ce.compileSubroutineBody(subroutineName)
 	if err != nil {
 		return nil, err
 	}
 	subroutineDec.AddChild(subroutineBody)
 
-	// Sum of number of local variables belonging to the subroutine
-	nLocals := 0
-	for _, elem := range subroutineBody.GetChildren() {
-		if varElem, ok := elem.(VarElem); ok {
-			nLocals += varElem.nLocals
-		}
-	}
-
-	// Write function code
-	ce.vmwriter.Add(Function(subroutineName, nLocals))
 	return subroutineDec, nil
 }
 
-func (ce *CompilationEngine) compileSubroutineBody() (Elem, error) {
+func (ce *CompilationEngine) compileSubroutineBody(subroutineName string) (Elem, error) {
 	subroutineBody := NewSyntaxElem("subroutineBody")
 	err := ce.validateCurrent(SYMBOL, "{")
 	if err != nil {
@@ -443,6 +444,7 @@ func (ce *CompilationEngine) compileSubroutineBody() (Elem, error) {
 	}
 	subroutineBody.AddChild(ce.NewTokenElemCurrent())
 
+	nLocals := 0
 	for {
 		a, err := ce.t.LookAhead(1)
 		if a.Type() != KEYWORD || a.String() != "var" {
@@ -455,7 +457,11 @@ func (ce *CompilationEngine) compileSubroutineBody() (Elem, error) {
 			return nil, err
 		}
 		subroutineBody.AddChild(varDec)
+		nLocals += varDec.nLocals
 	}
+	// Write function code
+	// Sum of number of local variables belonging to the subroutine
+	ce.vmwriter.Add(FunctionCode(subroutineName, nLocals))
 
 	ce.t.Advance()
 	statements, err := ce.compileStatements()
@@ -737,6 +743,10 @@ func (ce *CompilationEngine) compileDo() (Elem, error) {
 		return nil, fmt.Errorf("Invalid ; %v", err)
 	}
 	dost.AddChild(ce.NewTokenElemCurrent())
+
+	// Pop the return value and discard it.
+	// See p263 and the slide p62
+	ce.vmwriter.Add(PopCode("temp", 0))
 	return dost, nil
 }
 
@@ -810,8 +820,12 @@ func (ce *CompilationEngine) compileReturn() (Elem, error) {
 		return nil, err
 	}
 	if a.Type() == SYMBOL && a.String() == ";" {
+		// If the return witout expression, push 0.
+		// See p263.
 		ce.t.Advance()
 		returnst.AddChild(ce.NewTokenElemCurrent())
+		ce.vmwriter.Add(PushCode("constant", 0))
+		ce.vmwriter.Add(ReturnCode())
 		return returnst, nil
 	}
 	ce.t.Advance()
@@ -827,6 +841,8 @@ func (ce *CompilationEngine) compileReturn() (Elem, error) {
 		return nil, err
 	}
 	returnst.AddChild(ce.NewTokenElemCurrent())
+
+	ce.vmwriter.Add(ReturnCode())
 	return returnst, nil
 }
 
@@ -917,6 +933,8 @@ func (ce *CompilationEngine) compileIf() (Elem, error) {
 
 func (ce *CompilationEngine) compileExpression() (Elem, error) {
 	expression := NewSyntaxElem("expression")
+
+	opCount := 0
 	for {
 		term, err := ce.compileTerm()
 		if err != nil {
@@ -932,28 +950,58 @@ func (ce *CompilationEngine) compileExpression() (Elem, error) {
 		if !isOp(a) {
 			break
 		}
-		ce.t.Advance()
-		expression.AddChild(ce.NewTokenElemCurrent())
+		opCount++
 
 		ce.t.Advance()
+		expression.AddChild(ce.NewTokenElemCurrent())
+		op := ce.t.Current().String()
+		switch op {
+		case "+":
+			ce.vmwriter.OperatorStack.Push("add")
+		case "-":
+			ce.vmwriter.OperatorStack.Push("sub")
+		case "*":
+			ce.vmwriter.OperatorStack.Push(CallCode("Math.multiply", 2))
+		case "/":
+			ce.vmwriter.OperatorStack.Push(CallCode("Math.divide", 2))
+		case "=":
+			ce.vmwriter.OperatorStack.Push("eq")
+		case ">":
+			ce.vmwriter.OperatorStack.Push("gt")
+		case "<":
+			ce.vmwriter.OperatorStack.Push("lt")
+		case "&":
+			ce.vmwriter.OperatorStack.Push("and")
+		case "|":
+			ce.vmwriter.OperatorStack.Push("or")
+		}
+
+		ce.t.Advance()
+	}
+	// Shunting yard for operators
+	for i := 0; i < opCount; i++ {
+		op, _ := ce.vmwriter.OperatorStack.Pop()
+		ce.vmwriter.Add(op)
 	}
 	return expression, nil
 }
 
 // Start: (
 // End:   )
-func (ce *CompilationEngine) compileExpressionList() (Elem, error) {
-	expressionList := NewSyntaxElem("expressionList")
+func (ce *CompilationEngine) compileExpressionList() (*ExpressionListElem, error) {
+	expressionList := NewExpressionListElem("expressionList")
 	if ce.t.Current().Type() == SYMBOL && ce.t.Current().String() == ")" {
 		ce.t.Backward()
-		return expressionList, nil
+		return &expressionList, nil
 	}
+	nExpressions := 0
 	for {
 		expression, err := ce.compileExpression()
 		if err != nil {
 			return nil, fmt.Errorf("Failed to compile expression: %v", err)
 		}
 		expressionList.AddChild(expression)
+		nExpressions++
 		a, err := ce.t.LookAhead(1)
 		if err != nil {
 			return nil, err
@@ -966,15 +1014,25 @@ func (ce *CompilationEngine) compileExpressionList() (Elem, error) {
 		expressionList.AddChild(ce.NewTokenElemCurrent())
 		ce.t.Advance()
 	}
-	return expressionList, nil
+	expressionList.nExpressions = nExpressions
+	return &expressionList, nil
 }
 
 func (ce *CompilationEngine) compileTerm() (Elem, error) {
 	term := NewSyntaxElem("term")
 
 	cur := ce.t.Current()
-	if cur.Type() == INT_CONST || cur.Type() == STR_CONST {
-		// integerConstant or stringConstant
+	if cur.Type() == INT_CONST {
+		// integerConstant
+		i, err := strconv.Atoi(cur.String())
+		if err != nil {
+			return nil, err
+		}
+		ce.vmwriter.Add(PushCode("constant", i))
+		term.AddChild(ce.NewTokenElemCurrent())
+	} else if cur.Type() == STR_CONST {
+		// TODO: treat string constant with Jack OS's String
+		// stringConstant
 		term.AddChild(ce.NewTokenElemCurrent())
 	} else if isKeywordConstant(ce.t.Current()) {
 		// keywordConstant
@@ -988,9 +1046,17 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 			return nil, fmt.Errorf("Failed to compile UnaryOp term: %v", err)
 		}
 		term.AddChild(term2)
+		switch ce.t.Current().String() {
+		case "~":
+			ce.vmwriter.Add("not")
+		case "-":
+			ce.vmwriter.Add("neg")
+		}
 	} else if cur.Type() == SYMBOL && cur.String() == "(" {
 		// ( expression )
 		term.AddChild(ce.NewTokenElemCurrent())
+
+		ce.vmwriter.OperatorStack.Push("(")
 
 		ce.t.Advance()
 		expression, err := ce.compileExpression()
@@ -1005,6 +1071,11 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 			return nil, err
 		}
 		term.AddChild(ce.NewTokenElemCurrent())
+
+		// Shunting yard algorithm
+		for op, ok := ce.vmwriter.OperatorStack.Pop(); ok && op != "("; op, ok = ce.vmwriter.OperatorStack.Pop() {
+			ce.vmwriter.Add(op)
+		}
 
 	} else if cur.Type() == IDENTIFIER {
 		// subroutine call or array or var
@@ -1115,6 +1186,7 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	if err != nil {
 		return err
 	}
+	subroutineName := ce.t.Current().String()
 	e.AddChild(ce.NewTokenElemCurrent())
 
 	a1, err := ce.t.LookAhead(1)
@@ -1129,12 +1201,15 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 			return err
 		}
 		e.AddChild(ce.NewTokenElemCurrent())
+		subroutineName += ce.t.Current().String()
+
 		ce.t.Advance()
 		err = ce.validateCurrentType(IDENTIFIER)
 		if err != nil {
 			return err
 		}
 		e.AddChild(ce.NewTokenElemCurrent())
+		subroutineName += ce.t.Current().String()
 	}
 	ce.t.Advance()
 	err = ce.validateCurrent(SYMBOL, "(")
@@ -1149,6 +1224,8 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 		return err
 	}
 	e.AddChild(expressionList)
+	nExpressions := expressionList.nExpressions
+
 	ce.t.Advance()
 	// }
 	err = ce.validateCurrent(SYMBOL, ")")
@@ -1156,5 +1233,7 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 		return err
 	}
 	e.AddChild(ce.NewTokenElemCurrent())
+
+	ce.vmwriter.Add(CallCode(subroutineName, nExpressions))
 	return nil
 }
