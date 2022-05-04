@@ -121,16 +121,12 @@ func (ce *CompilationEngine) validateCurrentIsTypeToken() error {
 	}
 }
 
-func (ce *CompilationEngine) isCurrentEqualTo(tokenType string, tokenString string) bool {
+func (ce *CompilationEngine) isCurrent(tokenType string, tokenString string) bool {
 	return ce.t.Current().Type() == tokenType && ce.t.Current().String() == tokenString
 }
 
-func (ce *CompilationEngine) isCurrentStringEqualTo(tokenString string) bool {
+func (ce *CompilationEngine) isCurrentString(tokenString string) bool {
 	return ce.t.Current().String() == tokenString
-}
-
-func (ce *CompilationEngine) isCurrentTypeEqualTo(tokenType string) bool {
-	return ce.t.Current().String() == tokenType
 }
 
 func (ce *CompilationEngine) isCurrentTypeToken() bool {
@@ -207,7 +203,7 @@ func (ce *CompilationEngine) compileClass() (Elem, error) {
 	class.AddChild(ce.NewTokenElemCurrent())
 
 	ce.t.Advance()
-	for !ce.isCurrentEqualTo(SYMBOL, "}") {
+	for !ce.isCurrent(SYMBOL, "}") {
 
 		curStr := ce.t.Current().String()
 		curType := ce.t.Current().Type()
@@ -245,14 +241,14 @@ func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 	var varKind string
 
 	// static or field
-	isStatic := ce.isCurrentEqualTo(KEYWORD, "static")
-	isField := ce.isCurrentEqualTo(KEYWORD, "field")
-	if !isStatic && !isField {
-		return nil, compileError(errors.New("Invalid class var declaration."), ce.t.Current())
-	} else if isStatic {
+	isStatic := ce.isCurrent(KEYWORD, "static")
+	isField := ce.isCurrent(KEYWORD, "field")
+	if isStatic {
 		varKind = STATIC
-	} else {
+	} else if isField {
 		varKind = FIELD
+	} else {
+		return nil, compileError(errors.New("Invalid class var declaration."), ce.t.Current())
 	}
 	classVarDec.AddChild(ce.NewTokenElemCurrent())
 
@@ -619,7 +615,7 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	varKind, _ := ce.subroutineTable().KindOf(varName)
 
 	ce.t.Advance()
-	if ce.isCurrentEqualTo(SYMBOL, "[") {
+	if ce.isCurrent(SYMBOL, "[") {
 		let.AddChild(ce.NewTokenElemCurrent())
 
 		ce.t.Advance()
@@ -1026,9 +1022,9 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 		// UnaryOp term
 		var op string
 		switch ce.t.Current().String() {
-		case TILDA:
+		case "~":
 			op = "not"
-		case MINUS:
+		case "-":
 			op = "neg"
 		}
 		term.AddChild(ce.NewTokenElemCurrent())
