@@ -18,7 +18,7 @@ func setupTokenizer(content string) *Tokenizer {
 }
 
 func setupCompilationEngine(src string) *CompilationEngine {
-	return NewCompilationEngine(*setupTokenizer(src), vmwriter.VMWriter{})
+	return NewCompilationEngine(setupTokenizer(src), &vmwriter.VMWriter{})
 }
 
 func readAsString(path string) string {

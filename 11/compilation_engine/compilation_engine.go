@@ -1,7 +1,6 @@
 package compilation_engine
 
 import (
-	"bytes"
 	. "compiler/symbol_table"
 	. "compiler/tokenizer"
 	. "compiler/vmwriter"
@@ -12,104 +11,17 @@ import (
 	"strconv"
 )
 
-type Elem interface {
-	AddChild(c Elem)
-	GetChildren() []Elem
-	MarshalXML(enc *xml.Encoder, start xml.StartElement) error
-	String() string
-}
-
-type BaseElem struct {
-	elemName string
-	children []Elem
-}
-
-func (e *BaseElem) AddChild(c Elem) {
-	e.children = append(e.children, c)
-}
-
-func (e *BaseElem) GetChildren() []Elem {
-	return e.children
-}
-
-func (e *BaseElem) String() string {
-	var b bytes.Buffer
-	b.WriteString(fmt.Sprintf("elemName=%v\n", e.elemName))
-	for _, child := range e.children {
-		b.WriteString(child.String())
-	}
-	return b.String()
-}
-
-type TokenElem struct {
-	*BaseElem
-	token Token
-}
-
-func (e *TokenElem) String() string {
-	return fmt.Sprintf("elemName=%v, tokenString=%v\n", e.elemName, e.token.String())
-}
-
-func (e *TokenElem) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
-	enc.EncodeElement(fmt.Sprintf(" %v ", e.token.String()), xml.StartElement{Name: xml.Name{Local: e.elemName}})
-	return nil
-}
-
-func NewTokenElem(token Token) Elem {
-	e := TokenElem{BaseElem: &BaseElem{elemName: token.Type(), children: make([]Elem, 0)}, token: token}
-	return &e
-}
-
-type SyntaxElem struct {
-	*BaseElem
-}
-
-func (e *SyntaxElem) MarshalXML(enc *xml.Encoder, start xml.StartElement) error {
-	start.Name.Local = e.elemName
-	enc.EncodeToken(start)
-	for _, child := range e.children {
-		child.MarshalXML(enc, start)
-	}
-	enc.EncodeToken(start.End())
-	return nil
-}
-
-func NewSyntaxElem(name string) Elem {
-	e := SyntaxElem{BaseElem: &BaseElem{elemName: name, children: []Elem{}}}
-	return &e
-}
-
-type VarElem struct {
-	*SyntaxElem
-	nLocals int
-}
-
-func NewVarElem(name string) VarElem {
-	return VarElem{SyntaxElem: NewSyntaxElem(name).(*SyntaxElem),
-		nLocals: 0}
-}
-
-type ExpressionListElem struct {
-	*SyntaxElem
-	nExpressions int
-}
-
-func NewExpressionListElem(name string) ExpressionListElem {
-	return ExpressionListElem{SyntaxElem: NewSyntaxElem(name).(*SyntaxElem),
-		nExpressions: 0}
-}
-
 type CompilationEngine struct {
-	t             Tokenizer
+	t             *Tokenizer
 	root          Elem
-	tables        []*SymbolTable // tables[0] for class, tables[1] for subroutine. tables[1] is cleared at every subroutine declaration.
-	labelManager  LabelManager   // lable manager. Cleared at every subroutine declaration
-	operatorStack Stack
-	vmwriter      VMWriter
+	tables        []*SymbolTable // tables[0] for class, tables[1] for subroutine. tables[1] will be cleared at every subroutine declaration.
+	labelManager  *LabelManager  // lable manager. It will be cleared at every subroutine declaration
+	operatorStack *Stack
+	vmwriter      *VMWriter
 }
 
-func NewCompilationEngine(t Tokenizer, vmWriter VMWriter) *CompilationEngine {
-	return &CompilationEngine{t, nil, make([]*SymbolTable, 2), NewLabelManager(), *NewStack(), vmWriter}
+func NewCompilationEngine(t *Tokenizer, vmWriter *VMWriter) *CompilationEngine {
+	return &CompilationEngine{t, nil, make([]*SymbolTable, 2), NewLabelManager(), NewStack(), vmWriter}
 }
 
 func (ce *CompilationEngine) Compile() error {
@@ -121,28 +33,28 @@ func (ce *CompilationEngine) Compile() error {
 	return nil
 }
 
-func (ce *CompilationEngine) ClassTable() *SymbolTable {
+func (ce *CompilationEngine) classTable() *SymbolTable {
 	return ce.tables[0]
 }
 
-func (ce *CompilationEngine) SubroutineTable() *SymbolTable {
+func (ce *CompilationEngine) subroutineTable() *SymbolTable {
 	return ce.tables[1]
 }
 
-func (ce *CompilationEngine) InitializeSubroutineTable(subroutineName string) {
+func (ce *CompilationEngine) initializeSubroutineTable(subroutineName string) {
 	ce.tables[1] = NewSymbolTable(subroutineName)
 }
 
-func (ce *CompilationEngine) InitializeLabelManager() {
+func (ce *CompilationEngine) initializeLabelManager() {
 	ce.labelManager = NewLabelManager()
 }
 
-func (ce *CompilationEngine) ResolveVarInSubroutine(varName string) (*SymbolTable, bool) {
-	if _, ok := ce.SubroutineTable().KindOf(varName); ok {
-		return ce.SubroutineTable(), ok
+func (ce *CompilationEngine) resolveVariableInSubroutine(varName string) (*SymbolTable, bool) {
+	if _, ok := ce.subroutineTable().KindOf(varName); ok {
+		return ce.subroutineTable(), ok
 	}
-	_, ok := ce.ClassTable().KindOf(varName)
-	return ce.ClassTable(), ok
+	_, ok := ce.classTable().KindOf(varName)
+	return ce.classTable(), ok
 }
 
 var emptyXmlElem *regexp.Regexp = regexp.MustCompile(`( +)(<[a-zA-Z]+>)(</[a-zA-Z]+>)`)
@@ -362,7 +274,7 @@ func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 		}
 		classVarDec.AddChild(ce.NewTokenElemCurrent())
 		// Add entry for the last symbol table
-		ce.ClassTable().Define(ce.t.Current().String(), varType, varKind)
+		ce.classTable().Define(ce.t.Current().String(), varType, varKind)
 
 		next, err := ce.t.LookAhead(1)
 		if err != nil {
@@ -415,12 +327,12 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 		return nil, fmt.Errorf("Invalid subroutine declaration: %v", err)
 	}
 	subroutineDec.AddChild(ce.NewTokenElemCurrent())
-	subroutineName := ce.ClassTable().Name() + "." + ce.t.Current().String()
+	subroutineName := ce.classTable().Name() + "." + ce.t.Current().String()
 	symbolTableName := subroutineName
 
 	// Initialize symbol table and label manager for this subroutine
-	ce.InitializeSubroutineTable(symbolTableName)
-	ce.InitializeLabelManager()
+	ce.initializeSubroutineTable(symbolTableName)
+	ce.initializeLabelManager()
 
 	// (
 	ce.t.Advance()
@@ -471,15 +383,14 @@ func (ce *CompilationEngine) compileSubroutineBody(subroutineName string) (Elem,
 		}
 
 		ce.t.Advance()
-		varDec, err := ce.compileVarDec()
+		varDec, nLocalsInVarDec, err := ce.compileVarDec()
 		if err != nil {
 			return nil, err
 		}
 		subroutineBody.AddChild(varDec)
-		nLocals += varDec.nLocals
+		nLocals += nLocalsInVarDec
 	}
-	// Write function code
-	// Sum of number of local variables belonging to the subroutine
+
 	ce.vmwriter.Add(FunctionCode(subroutineName, nLocals))
 
 	ce.t.Advance()
@@ -499,13 +410,14 @@ func (ce *CompilationEngine) compileSubroutineBody(subroutineName string) (Elem,
 	return subroutineBody, nil
 }
 
-func (ce *CompilationEngine) compileVarDec() (*VarElem, error) {
-	varDec := NewVarElem("varDec")
+// It also returns the number of local variables in the declaration
+func (ce *CompilationEngine) compileVarDec() (Elem, int, error) {
+	varDec := NewSyntaxElem("varDec")
 
 	// var
 	err := ce.validateCurrent(KEYWORD, "var")
 	if err != nil {
-		return nil, compileError(err, ce.t.Current())
+		return nil, -1, compileError(err, ce.t.Current())
 	}
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
@@ -513,7 +425,7 @@ func (ce *CompilationEngine) compileVarDec() (*VarElem, error) {
 	ce.t.Advance()
 	err = ce.validateCurrentIsTypeToken()
 	if err != nil {
-		return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
+		return nil, -1, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 	}
 	varDec.AddChild(ce.NewTokenElemCurrent())
 	varType := ce.t.Current().String()
@@ -522,21 +434,21 @@ func (ce *CompilationEngine) compileVarDec() (*VarElem, error) {
 	ce.t.Advance()
 	err = ce.validateCurrentType(IDENTIFIER)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid var declaration: %v", compileError(err, ce.t.Current()))
+		return nil, -1, fmt.Errorf("Invalid var declaration: %v", compileError(err, ce.t.Current()))
 	}
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
 	// Add var to symbol table
 	varName := ce.t.Current().String()
-	ce.SubroutineTable().Define(varName, varType, "var")
+	ce.subroutineTable().Define(varName, varType, "var")
 
-	varDec.nLocals++
+	nLocals := 1
 
 	// If there are more variables, continue reading
 	for {
 		next, err := ce.t.LookAhead(1)
 		if err != nil {
-			return nil, compileError(err, ce.t.Current())
+			return nil, -1, compileError(err, ce.t.Current())
 		}
 		if !(next.String() == ",") {
 			break
@@ -549,25 +461,25 @@ func (ce *CompilationEngine) compileVarDec() (*VarElem, error) {
 		ce.t.Advance()
 		err = ce.validateCurrentType(IDENTIFIER)
 		if err != nil {
-			return nil, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
+			return nil, -1, fmt.Errorf("Invalid type declaration: %v", compileError(err, ce.t.Current()))
 		}
 		varDec.AddChild(ce.NewTokenElemCurrent())
 
 		// Add var to symbol table
 		varName = ce.t.Current().String()
-		ce.SubroutineTable().Define(varName, varType, "var")
+		ce.subroutineTable().Define(varName, varType, "var")
 
-		varDec.nLocals++
+		nLocals++
 	}
 	// ;
 	ce.t.Advance()
 	err = ce.validateCurrent(SYMBOL, ";")
 	if err != nil {
-		return nil, fmt.Errorf("Var dec must end with ;: %v", compileError(err, ce.t.Current()))
+		return nil, -1, fmt.Errorf("Var dec must end with ;: %v", compileError(err, ce.t.Current()))
 	}
 	varDec.AddChild(ce.NewTokenElemCurrent())
 
-	return &varDec, nil
+	return varDec, nLocals, nil
 }
 
 func (ce *CompilationEngine) compileParameterList() (Elem, error) {
@@ -593,7 +505,7 @@ func (ce *CompilationEngine) compileParameterList() (Elem, error) {
 		}
 		varName := ce.t.Current().String()
 		// Add arguments to the symbol table
-		ce.SubroutineTable().Define(varName, varType, varKind)
+		ce.subroutineTable().Define(varName, varType, varKind)
 		parameterList.AddChild(ce.NewTokenElemCurrent())
 
 		aheadToken, err := ce.t.LookAhead(1)
@@ -697,14 +609,14 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	}
 	let.AddChild(ce.NewTokenElemCurrent())
 	varName := ce.t.Current().String()
-	varIndex, ok := ce.SubroutineTable().IndexOf(varName)
+	varIndex, ok := ce.subroutineTable().IndexOf(varName)
 	if !ok {
-		varIndex, ok = ce.ClassTable().IndexOf(varName)
+		varIndex, ok = ce.classTable().IndexOf(varName)
 		if !ok {
 			return nil, fmt.Errorf("Variable %s is not defined.", varName)
 		}
 	}
-	varKind, _ := ce.SubroutineTable().KindOf(varName)
+	varKind, _ := ce.subroutineTable().KindOf(varName)
 
 	ce.t.Advance()
 	if ce.isCurrentEqualTo(SYMBOL, "[") {
@@ -994,7 +906,7 @@ func (ce *CompilationEngine) compileIf() (Elem, error) {
 func (ce *CompilationEngine) compileExpression() (Elem, error) {
 	expression := NewSyntaxElem("expression")
 
-	opCount := 0
+	nOps := 0
 	for {
 		term, err := ce.compileTerm()
 		if err != nil {
@@ -1010,7 +922,7 @@ func (ce *CompilationEngine) compileExpression() (Elem, error) {
 		if !isOp(a) {
 			break
 		}
-		opCount++
+		nOps++
 
 		ce.t.Advance()
 		expression.AddChild(ce.NewTokenElemCurrent())
@@ -1039,7 +951,7 @@ func (ce *CompilationEngine) compileExpression() (Elem, error) {
 		ce.t.Advance()
 	}
 	// Shunting yard for operators
-	for i := 0; i < opCount; i++ {
+	for i := 0; i < nOps; i++ {
 		op := ce.operatorStack.Pop()
 		ce.vmwriter.Add(op)
 	}
@@ -1048,23 +960,24 @@ func (ce *CompilationEngine) compileExpression() (Elem, error) {
 
 // Start: (
 // End:   )
-func (ce *CompilationEngine) compileExpressionList() (*ExpressionListElem, error) {
-	expressionList := NewExpressionListElem("expressionList")
+// It also returns the number of expressions
+func (ce *CompilationEngine) compileExpressionList() (Elem, int, error) {
+	expressionList := NewSyntaxElem("expressionList")
 	if ce.t.Current().Type() == SYMBOL && ce.t.Current().String() == ")" {
 		ce.t.Backward()
-		return &expressionList, nil
+		return expressionList, -1, nil
 	}
 	nExpressions := 0
 	for {
 		expression, err := ce.compileExpression()
 		if err != nil {
-			return nil, fmt.Errorf("Failed to compile expression: %v", err)
+			return nil, -1, fmt.Errorf("Failed to compile expression: %v", err)
 		}
 		expressionList.AddChild(expression)
 		nExpressions++
 		a, err := ce.t.LookAhead(1)
 		if err != nil {
-			return nil, err
+			return nil, -1, err
 		}
 		if !(a.Type() == SYMBOL && a.String() == ",") {
 			break
@@ -1074,8 +987,7 @@ func (ce *CompilationEngine) compileExpressionList() (*ExpressionListElem, error
 		expressionList.AddChild(ce.NewTokenElemCurrent())
 		ce.t.Advance()
 	}
-	expressionList.nExpressions = nExpressions
-	return &expressionList, nil
+	return expressionList, nExpressions, nil
 }
 
 func (ce *CompilationEngine) compileTerm() (Elem, error) {
@@ -1171,7 +1083,7 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 			term.AddChild(ce.NewTokenElemCurrent())
 
 			ce.t.Advance()
-			expressionList, err := ce.compileExpressionList()
+			expressionList, _, err := ce.compileExpressionList()
 			if err != nil {
 				return nil, err
 			}
@@ -1215,7 +1127,7 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 
 			// Push the variable
 			varName := ce.t.Current().String()
-			table, ok := ce.ResolveVarInSubroutine(varName)
+			table, ok := ce.resolveVariableInSubroutine(varName)
 			if !ok {
 				return nil, fmt.Errorf("Variable %s is undefined.", varName)
 			}
@@ -1272,12 +1184,11 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	e.AddChild(ce.NewTokenElemCurrent())
 
 	ce.t.Advance()
-	expressionList, err := ce.compileExpressionList()
+	expressionList, nExpressions, err := ce.compileExpressionList()
 	if err != nil {
 		return err
 	}
 	e.AddChild(expressionList)
-	nExpressions := expressionList.nExpressions
 
 	ce.t.Advance()
 	// }

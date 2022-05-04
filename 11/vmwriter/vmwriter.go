@@ -101,8 +101,8 @@ type LabelManager struct {
 	whileStack Stack
 }
 
-func NewLabelManager() LabelManager {
-	return LabelManager{map[string]int{"while": -1, "if": -1}, *NewStack(), *NewStack()}
+func NewLabelManager() *LabelManager {
+	return &LabelManager{map[string]int{"while": -1, "if": -1}, *NewStack(), *NewStack()}
 }
 
 func (l *LabelManager) StartWhile() {

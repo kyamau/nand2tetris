@@ -51,7 +51,7 @@ func compile(srcPath string) error {
 	vmWriter, err := vmwriter.NewVMWriter()
 
 	// Compile
-	ce := compilation_engine.NewCompilationEngine(*tokenizer, *vmWriter)
+	ce := compilation_engine.NewCompilationEngine(tokenizer, vmWriter)
 	err = ce.Compile()
 	if err != nil {
 		return fmt.Errorf("Failed to parse: src=%v: %v", srcPath, err)
