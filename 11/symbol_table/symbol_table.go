@@ -13,11 +13,7 @@ type SymbolTable struct {
 	kindCounter map[string]int
 }
 
-func NewEmptyClassSymbolTable(name string) *SymbolTable {
-	return &SymbolTable{name, []Entry{}, make(map[string]int)}
-}
-
-func NewEmptyMethodSymbolTable(name string) *SymbolTable {
+func NewSymbolTable(name string) *SymbolTable {
 	return &SymbolTable{name, []Entry{}, make(map[string]int)}
 }
 
@@ -30,31 +26,31 @@ func (s *SymbolTable) VarCount(varKind string) int {
 	return s.kindCounter[varKind]
 }
 
-func (s *SymbolTable) KindOf(varName string) (bool, string) {
+func (s *SymbolTable) KindOf(varName string) (string, bool) {
 	for _, e := range s.entries {
 		if e.varName == varName {
-			return true, e.varKind
+			return e.varKind, true
 		}
 	}
-	return false, ""
+	return "", false
 }
 
-func (s *SymbolTable) TypeOf(varName string) (bool, string) {
+func (s *SymbolTable) TypeOf(varName string) (string, bool) {
 	for _, e := range s.entries {
 		if e.varName == varName {
-			return true, e.varType
+			return e.varType, true
 		}
 	}
-	return false, ""
+	return "", false
 }
 
-func (s *SymbolTable) IndexOf(varName string) (bool, int) {
+func (s *SymbolTable) IndexOf(varName string) (int, bool) {
 	for _, e := range s.entries {
 		if e.varName == varName {
-			return true, e.varNum
+			return e.varNum, true
 		}
 	}
-	return false, -1
+	return -1, false
 }
 
 func (s *SymbolTable) Name() string {

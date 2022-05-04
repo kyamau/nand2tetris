@@ -3,6 +3,7 @@ package vmwriter
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -12,27 +13,29 @@ type Stack struct {
 }
 
 func NewStack() *Stack {
-	return &Stack{[]string{}, -1}
+	initialSize := 20
+	return &Stack{make([]string, initialSize), 0}
 }
 
 func (s *Stack) Push(e string) {
-	s.stack = append(s.stack, e)
+	s.stack[s.sp] = e
 	s.sp++
 }
 
-func (s *Stack) Pop() (string, bool) {
-	if s.sp-1 < 0 {
-		return "", false
-	}
+// Pop. Panic if the stack is empty.
+func (s *Stack) Pop() string {
 	poped := s.stack[s.sp-1]
-	s.stack = s.stack[:s.sp-1]
 	s.sp--
-	return poped, true
+	return poped
+}
+
+// See the top of the stack. Panic if the stack is empty.
+func (s *Stack) Top() string {
+	return s.stack[s.sp-1]
 }
 
 type VMWriter struct {
-	lines         []string
-	OperatorStack Stack
+	lines []string
 }
 
 func (w *VMWriter) Add(code string) {
@@ -44,7 +47,7 @@ func (w *VMWriter) Code() []string {
 }
 
 func NewVMWriter() (*VMWriter, error) {
-	vmWriter := VMWriter{[]string{}, Stack{}}
+	vmWriter := VMWriter{[]string{}}
 	return &vmWriter, nil
 }
 
@@ -76,7 +79,7 @@ func GotoCode(label string) string {
 	return fmt.Sprintf("goto %s", label)
 }
 
-func IfCode(label string) string {
+func IfGotoCode(label string) string {
 	return fmt.Sprintf("if-goto %s", label)
 }
 
@@ -90,4 +93,52 @@ func CallCode(name string, nArgs int) string {
 
 func ReturnCode() string {
 	return fmt.Sprintf("return")
+}
+
+type LabelManager struct {
+	counter    map[string]int
+	ifStack    Stack
+	whileStack Stack
+}
+
+func NewLabelManager() LabelManager {
+	return LabelManager{map[string]int{"while": -1, "if": -1}, *NewStack(), *NewStack()}
+}
+
+func (l *LabelManager) StartWhile() {
+	l.counter["while"]++
+	l.whileStack.Push(strconv.Itoa(l.counter["while"]))
+}
+
+func (l *LabelManager) EndWhile() {
+	l.whileStack.Pop()
+}
+
+func (l *LabelManager) WhileExpLabel() string {
+	return fmt.Sprintf("WHILE_EXP%s", l.whileStack.Top())
+}
+
+func (l *LabelManager) WhileEndLabel() string {
+	return fmt.Sprintf("WHILE_END%s", l.whileStack.Top())
+}
+
+func (l *LabelManager) StartIf() {
+	l.counter["if"]++
+	l.ifStack.Push(strconv.Itoa(l.counter["if"]))
+}
+
+func (l *LabelManager) EndIf() {
+	l.ifStack.Pop()
+}
+
+func (l *LabelManager) IfTrueLabel() string {
+	return fmt.Sprintf("IF_TRUE%s", l.ifStack.Top())
+}
+
+func (l *LabelManager) IfFalseLabel() string {
+	return fmt.Sprintf("IF_FALSE%s", l.ifStack.Top())
+}
+
+func (l *LabelManager) IfEndLabel() string {
+	return fmt.Sprintf("IF_END%s", l.ifStack.Top())
 }

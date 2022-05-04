@@ -14,7 +14,7 @@ clean:
 	-Remove-Item ./compiler.exe > $$null
 	-Remove-Item -Recurse test/*.out > $$null
 
-# Tests for parsing
+# Tests for chapter 10 parsing
 test_parser: build test_parser/ArrayTest test_parser/ExpressionLessSquare test_parser/Square
 
 test_parser/ArrayTest: build
@@ -29,8 +29,12 @@ test_parser/Square: build
 	./compiler.exe $@
 	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
-# Test for code generation
+# Test for chapter 11 code generation
  test/Seven: build
+	./compiler.exe $@
+	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	
+ test/ConvertToBin: build
 	./compiler.exe $@
 	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 	
