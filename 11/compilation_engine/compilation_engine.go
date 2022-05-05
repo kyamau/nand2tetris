@@ -244,9 +244,9 @@ func (ce *CompilationEngine) compileClassVarDec() (Elem, error) {
 	isStatic := ce.isCurrent(KEYWORD, "static")
 	isField := ce.isCurrent(KEYWORD, "field")
 	if isStatic {
-		varKind = STATIC
+		varKind = "static"
 	} else if isField {
-		varKind = FIELD
+		varKind = "field"
 	} else {
 		return nil, compileError(errors.New("Invalid class var declaration."), ce.t.Current())
 	}
@@ -307,6 +307,7 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 		return nil, fmt.Errorf("Invalid subroutine declaration: %v", err)
 	}
 	subroutineDec.AddChild(ce.NewTokenElemCurrent())
+	subroutineType := ce.t.Current().String()
 
 	// void or type name
 	ce.t.Advance()
@@ -354,7 +355,7 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 
 	// subroutineBody
 	ce.t.Advance()
-	subroutineBody, err := ce.compileSubroutineBody(subroutineName)
+	subroutineBody, err := ce.compileSubroutineBody(subroutineType, subroutineName)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +364,7 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 	return subroutineDec, nil
 }
 
-func (ce *CompilationEngine) compileSubroutineBody(subroutineName string) (Elem, error) {
+func (ce *CompilationEngine) compileSubroutineBody(subroutineType string, subroutineName string) (Elem, error) {
 	subroutineBody := NewSyntaxElem("subroutineBody")
 	err := ce.validateCurrent(SYMBOL, "{")
 	if err != nil {
@@ -389,6 +390,21 @@ func (ce *CompilationEngine) compileSubroutineBody(subroutineName string) (Elem,
 
 	ce.vmwriter.Add(FunctionCode(subroutineName, nLocals))
 
+	// Allocate a new object
+	if subroutineType == "constructor" {
+		nFields := ce.classTable().VarCount("field")
+		ce.vmwriter.Add(PushCode("constant", nFields))
+		ce.vmwriter.Add(CallCode("Memory.alloc", 1))
+		// Set the pointer of the instance to the pointer segment.
+		// This will be passed to the left side variable in let statement.
+		ce.vmwriter.Add(PopCode("pointer", 0))
+	}
+
+	// Set the instance(passed as 1st parameter implicitly) to the pointer
+	if subroutineType == "method" {
+		ce.vmwriter.Add(PushCode("argument", 0))
+		ce.vmwriter.Add(PopCode("pointer", 0))
+	}
 	ce.t.Advance()
 	statements, err := ce.compileStatements()
 	if err != nil {
@@ -605,16 +621,21 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	}
 	let.AddChild(ce.NewTokenElemCurrent())
 	varName := ce.t.Current().String()
-	varIndex, ok := ce.subroutineTable().IndexOf(varName)
-	if !ok {
-		varIndex, ok = ce.classTable().IndexOf(varName)
-		if !ok {
-			return nil, fmt.Errorf("Variable %s is not defined.", varName)
-		}
+
+	var table *SymbolTable
+	var varIndex int
+	var varKind string
+	var ok bool
+
+	if table, ok = ce.resolveVariableInSubroutine(varName); ok {
+		varIndex, _ = table.IndexOf(varName)
+		varKind, _ = table.KindOf(varName)
+	} else {
+		return nil, fmt.Errorf("Variable %s is not defined.", varName)
 	}
-	varKind, _ := ce.subroutineTable().KindOf(varName)
 
 	ce.t.Advance()
+	// Array
 	if ce.isCurrent(SYMBOL, "[") {
 		let.AddChild(ce.NewTokenElemCurrent())
 
@@ -659,6 +680,8 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 		ce.vmwriter.Add(PopCode("local", varIndex))
 	case "argument":
 		ce.vmwriter.Add(PopCode("argument", varIndex))
+	case "field":
+		ce.vmwriter.Add(PopCode("this", varIndex))
 	}
 	//TODO add other kind
 
@@ -689,7 +712,7 @@ func (ce *CompilationEngine) compileDo() (Elem, error) {
 	dost.AddChild(ce.NewTokenElemCurrent())
 
 	// Pop the return value and discard it.
-	// See p263 and the slide p62
+	// See the text p263 and chapter 11 slide p62
 	ce.vmwriter.Add(PopCode("temp", 0))
 	return dost, nil
 }
@@ -777,10 +800,10 @@ func (ce *CompilationEngine) compileReturn() (Elem, error) {
 		return nil, err
 	}
 	if a.Type() == SYMBOL && a.String() == ";" {
-		// If the return witout expression, push 0.
-		// See p263.
 		ce.t.Advance()
 		returnst.AddChild(ce.NewTokenElemCurrent())
+		// Push 0 for void return
+		// See p263.
 		ce.vmwriter.Add(PushCode("constant", 0))
 		ce.vmwriter.Add(ReturnCode())
 		return returnst, nil
@@ -860,7 +883,6 @@ func (ce *CompilationEngine) compileIf() (Elem, error) {
 		return nil, err
 	}
 	ifst.AddChild(ce.NewTokenElemCurrent())
-	ce.vmwriter.Add(GotoCode(ce.labelManager.IfEndLabel()))
 
 	a, err := ce.t.LookAhead(1)
 	if err != nil {
@@ -868,10 +890,15 @@ func (ce *CompilationEngine) compileIf() (Elem, error) {
 	}
 
 	if a.Type() == KEYWORD && a.String() == "else" {
+		// Skip the else clause when the if condition met. This is needed only when else clause exists.
+		ce.vmwriter.Add(GotoCode(ce.labelManager.IfEndLabel()))
+		// Jumped here from the if clause when
+		// - the condition didn't meet
+		// - else clause exists
+		ce.vmwriter.Add(LabelCode(ce.labelManager.IfFalseLabel()))
+
 		ce.t.Advance()
 		ifst.AddChild(ce.NewTokenElemCurrent())
-
-		ce.vmwriter.Add(LabelCode(ce.labelManager.IfFalseLabel()))
 
 		ce.t.Advance()
 		err = ce.validateCurrent(SYMBOL, "{")
@@ -893,8 +920,14 @@ func (ce *CompilationEngine) compileIf() (Elem, error) {
 			return nil, fmt.Errorf("Failed to close } in compileIf %v: ", err)
 		}
 		ifst.AddChild(ce.NewTokenElemCurrent())
+
+		ce.vmwriter.Add(LabelCode(ce.labelManager.IfEndLabel()))
+	} else {
+		// Jumped here from the if clause when
+		// - the condition didn't meet
+		// - else clause doesn't exists
+		ce.vmwriter.Add(LabelCode(ce.labelManager.IfFalseLabel()))
 	}
-	ce.vmwriter.Add(LabelCode(ce.labelManager.IfEndLabel()))
 	ce.labelManager.EndIf()
 	return ifst, nil
 }
@@ -959,11 +992,11 @@ func (ce *CompilationEngine) compileExpression() (Elem, error) {
 // It also returns the number of expressions
 func (ce *CompilationEngine) compileExpressionList() (Elem, int, error) {
 	expressionList := NewSyntaxElem("expressionList")
+	nExpressions := 0
 	if ce.t.Current().Type() == SYMBOL && ce.t.Current().String() == ")" {
 		ce.t.Backward()
-		return expressionList, -1, nil
+		return expressionList, nExpressions, nil
 	}
-	nExpressions := 0
 	for {
 		expression, err := ce.compileExpression()
 		if err != nil {
@@ -1009,14 +1042,15 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 		// Write keyword
 		keyword := ce.t.Current().String()
 		switch keyword {
-		case TRUE:
+		case "true":
 			// true = -1 (0xFFFF)
 			ce.vmwriter.Add(PushCode("constant", 0))
 			ce.vmwriter.Add("not")
-		case FALSE:
+		case "false":
 			// false = 0 (0x0000)
 			ce.vmwriter.Add(PushCode("constant", 0))
-
+		case "this":
+			ce.vmwriter.Add(PushCode("pointer", 0))
 		}
 	} else if isUnaryOp(ce.t.Current()) {
 		// UnaryOp term
@@ -1129,12 +1163,8 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 			}
 			varKind, _ := table.KindOf(varName)
 			varIndex, _ := table.IndexOf(varName)
-			switch varKind {
-			case "var":
-				ce.vmwriter.Add(PushCode("local", varIndex))
-			case "argument":
-				ce.vmwriter.Add(PushCode("argument", varIndex))
-			}
+			segment := varKindToSegment(varKind)
+			ce.vmwriter.Add(PushCode(segment, varIndex))
 		}
 	}
 	return term, nil
@@ -1147,7 +1177,8 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	if err != nil {
 		return err
 	}
-	subroutineName := ce.t.Current().String()
+	prefix := ce.t.Current().String()
+	var subroutineName string
 	e.AddChild(ce.NewTokenElemCurrent())
 
 	a1, err := ce.t.LookAhead(1)
@@ -1155,14 +1186,31 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 		return err
 	}
 
+	// Read the name and decide whether a method or a function/constuctor by its name. See p208.
+	// TODO: Refactoring
+	isMethod := false
+	isReceiverVariable := false
+	var varKind string
+	var varType string
+	var varIndex int
 	if a1.String() == "." {
+		// varName.foo() is a method.
+		if table, ok := ce.resolveVariableInSubroutine(prefix); ok {
+			isMethod = true
+			isReceiverVariable = true
+			varType, _ = table.TypeOf(prefix)
+			varKind, _ = table.KindOf(prefix)
+			prefix = varType
+		}
+
+		// className.foo() is a function/consturctor
 		ce.t.Advance()
 		err = ce.validateCurrent(SYMBOL, ".")
 		if err != nil {
 			return err
 		}
 		e.AddChild(ce.NewTokenElemCurrent())
-		subroutineName += ce.t.Current().String()
+		subroutineName = prefix + ce.t.Current().String()
 
 		ce.t.Advance()
 		err = ce.validateCurrentType(IDENTIFIER)
@@ -1171,6 +1219,10 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 		}
 		e.AddChild(ce.NewTokenElemCurrent())
 		subroutineName += ce.t.Current().String()
+	} else {
+		// foo() is a method. Completing type name.
+		isMethod = true
+		subroutineName = fmt.Sprintf("%s.%s", ce.classTable().Name(), prefix)
 	}
 	ce.t.Advance()
 	err = ce.validateCurrent(SYMBOL, "(")
@@ -1194,6 +1246,30 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	}
 	e.AddChild(ce.NewTokenElemCurrent())
 
+	// Pass the instance to the method as 1st parameter
+	if isMethod {
+		nExpressions++
+		if isReceiverVariable {
+			segment := varKindToSegment(varKind)
+			ce.vmwriter.Add(PushCode(segment, varIndex))
+		} else {
+			// The receiver is this
+			ce.vmwriter.Add(PushCode("pointer", 0))
+		}
+	}
 	ce.vmwriter.Add(CallCode(subroutineName, nExpressions))
 	return nil
+}
+
+func varKindToSegment(varKind string) string {
+	switch varKind {
+	case "var":
+		return "local"
+	case "field":
+		return "this"
+	case "argument":
+		return "argument"
+		//TODO static
+	}
+	return ""
 }

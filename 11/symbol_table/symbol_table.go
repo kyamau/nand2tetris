@@ -2,8 +2,8 @@ package symbol_table
 
 type Entry struct {
 	varName string
-	varType string
-	varKind string
+	varType string // int, boolean, char
+	varKind string // static, field, argument, var
 	varNum  int
 }
 
