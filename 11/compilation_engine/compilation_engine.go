@@ -623,20 +623,19 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	varName := ce.t.Current().String()
 
 	var table *SymbolTable
-	var varIndex int
-	var varKind string
 	var ok bool
-
 	if table, ok = ce.resolveVariableInSubroutine(varName); ok {
-		varIndex, _ = table.IndexOf(varName)
-		varKind, _ = table.KindOf(varName)
 	} else {
 		return nil, fmt.Errorf("Variable %s is not defined.", varName)
 	}
+	varIndex, _ := table.IndexOf(varName)
+	varKind, _ := table.KindOf(varName)
+	isArray := false
 
 	ce.t.Advance()
 	// Array
 	if ce.isCurrent(SYMBOL, "[") {
+		isArray = true
 		let.AddChild(ce.NewTokenElemCurrent())
 
 		ce.t.Advance()
@@ -653,6 +652,9 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 		}
 		let.AddChild(ce.NewTokenElemCurrent())
 		ce.t.Advance()
+		// array head + index
+		ce.vmwriter.Add(PushCode(varKindToSegment(varKind), varIndex))
+		ce.vmwriter.Add("add")
 	}
 
 	err = ce.validateCurrent(SYMBOL, "=")
@@ -675,16 +677,15 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	}
 	let.AddChild(ce.NewTokenElemCurrent())
 
-	switch varKind {
-	case "var":
-		ce.vmwriter.Add(PopCode("local", varIndex))
-	case "argument":
-		ce.vmwriter.Add(PopCode("argument", varIndex))
-	case "field":
-		ce.vmwriter.Add(PopCode("this", varIndex))
+	if isArray {
+		ce.vmwriter.Add(PopCode("temp", 0))    // Store the result of the left expression
+		ce.vmwriter.Add(PopCode("pointer", 1)) // Store the pointer to the array head + index
+		ce.vmwriter.Add(PushCode("temp", 0))
+		ce.vmwriter.Add(PopCode("that", 0))
+	} else { //{ varType == "int" || varType == "boolean" || varType == "char" {
+		ce.vmwriter.Add(PopCode(varKindToSegment(varKind), varIndex))
+		//TODO add other kind
 	}
-	//TODO add other kind
-
 	return let, nil
 }
 
@@ -1032,9 +1033,16 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 		ce.vmwriter.Add(PushCode("constant", i))
 		term.AddChild(ce.NewTokenElemCurrent())
 	} else if cur.Type() == STR_CONST {
-		// TODO: treat string constant with Jack OS's String
 		// stringConstant
 		term.AddChild(ce.NewTokenElemCurrent())
+		strconst := ce.t.Current().String()
+		ce.vmwriter.Add(PushCode("constant", len(strconst)))
+		ce.vmwriter.Add(CallCode("String.new", 1))
+		for _, r := range strconst {
+			ce.vmwriter.Add(PushCode("constant", int(r)))
+			ce.vmwriter.Add(CallCode("String.appendChar", 2))
+		}
+
 	} else if isKeywordConstant(ce.t.Current()) {
 		// keywordConstant
 		term.AddChild(ce.NewTokenElemCurrent())
@@ -1125,7 +1133,18 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 				return nil, err
 			}
 		} else if a.Type() == SYMBOL && a.String() == "[" {
+			// Array
 			// varName [ expression ]
+			varName := cur.String()
+			var table *SymbolTable
+			var ok bool
+			if table, ok = ce.resolveVariableInSubroutine(varName); ok {
+			} else {
+				return nil, fmt.Errorf("Variable %s is not defined.", varName)
+			}
+			varIndex, _ := table.IndexOf(varName)
+			varKind, _ := table.KindOf(varName)
+
 			term.AddChild(ce.NewTokenElemCurrent())
 
 			ce.t.Advance()
@@ -1148,6 +1167,11 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 				return nil, err
 			}
 			term.AddChild(ce.NewTokenElemCurrent())
+			// array head + index
+			ce.vmwriter.Add(PushCode(varKindToSegment(varKind), varIndex))
+			ce.vmwriter.Add("add")
+			ce.vmwriter.Add(PopCode("pointer", 1))
+			ce.vmwriter.Add(PushCode("that", 0))
 		} else if a.Type() == SYMBOL && a.String() == "." {
 			// (className | varName).subroutineName(expressionList)
 			ce.compileSubroutineCall(term)
