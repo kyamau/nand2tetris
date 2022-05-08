@@ -340,7 +340,7 @@ func (ce *CompilationEngine) compileSubroutine() (Elem, error) {
 	subroutineDec.AddChild(ce.NewTokenElemCurrent())
 
 	ce.t.Advance()
-	parameterList, err := ce.compileParameterList()
+	parameterList, err := ce.compileParameterList(subroutineType)
 	if err != nil {
 		return nil, err
 	}
@@ -494,11 +494,17 @@ func (ce *CompilationEngine) compileVarDec() (Elem, int, error) {
 	return varDec, nLocals, nil
 }
 
-func (ce *CompilationEngine) compileParameterList() (Elem, error) {
+func (ce *CompilationEngine) compileParameterList(subroutineType string) (Elem, error) {
 	parameterList := NewSyntaxElem("parameterList")
 
 	if !ce.isCurrentTypeToken() {
 		return parameterList, nil
+	}
+
+	// Add a dummy implicit 1st argument for just counting up the other argument's index.
+	// Note: "this" isn't a variable but a keyword in this compiler. So, this is just a dummy and not treated as variable.
+	if subroutineType == "method" {
+		ce.subroutineTable().Define("this", ce.classTable().Name(), "argument")
 	}
 
 	for {
@@ -1224,6 +1230,7 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 			isReceiverVariable = true
 			varType, _ = table.TypeOf(prefix)
 			varKind, _ = table.KindOf(prefix)
+			varIndex, _ = table.IndexOf(prefix)
 			prefix = varType
 		}
 
@@ -1244,9 +1251,24 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 		e.AddChild(ce.NewTokenElemCurrent())
 		subroutineName += ce.t.Current().String()
 	} else {
-		// foo() is a method. Completing type name.
+		// foo() is a method. Complete the type name.
 		isMethod = true
 		subroutineName = fmt.Sprintf("%s.%s", ce.classTable().Name(), prefix)
+	}
+
+	// Treat arguments.
+	// Pass the instance to the implicit the 1st parameter of method
+	nArgs := 0
+	if isMethod {
+		// Count up for the implicit 1st parameter
+		nArgs++
+		if isReceiverVariable {
+			segment := varKindToSegment(varKind)
+			ce.vmwriter.Add(PushCode(segment, varIndex))
+		} else {
+			// The receiver is this
+			ce.vmwriter.Add(PushCode("pointer", 0))
+		}
 	}
 	ce.t.Advance()
 	err = ce.validateCurrent(SYMBOL, "(")
@@ -1256,11 +1278,12 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	e.AddChild(ce.NewTokenElemCurrent())
 
 	ce.t.Advance()
-	expressionList, nExpressions, err := ce.compileExpressionList()
+	expressionList, nExps, err := ce.compileExpressionList()
 	if err != nil {
 		return err
 	}
 	e.AddChild(expressionList)
+	nArgs += nExps
 
 	ce.t.Advance()
 	// }
@@ -1270,18 +1293,7 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	}
 	e.AddChild(ce.NewTokenElemCurrent())
 
-	// Pass the instance to the method as 1st parameter
-	if isMethod {
-		nExpressions++
-		if isReceiverVariable {
-			segment := varKindToSegment(varKind)
-			ce.vmwriter.Add(PushCode(segment, varIndex))
-		} else {
-			// The receiver is this
-			ce.vmwriter.Add(PushCode("pointer", 0))
-		}
-	}
-	ce.vmwriter.Add(CallCode(subroutineName, nExpressions))
+	ce.vmwriter.Add(CallCode(subroutineName, nArgs))
 	return nil
 }
 
@@ -1293,7 +1305,8 @@ func varKindToSegment(varKind string) string {
 		return "this"
 	case "argument":
 		return "argument"
-		//TODO static
+	case "static":
+		return "static"
 	}
 	return ""
 }

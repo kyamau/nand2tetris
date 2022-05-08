@@ -46,4 +46,8 @@ test_parser/Square: build
 	./compiler.exe $@
 	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
+ test/Pong: build
+	./compiler.exe $@
+	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+
 test_code_generation: test/Seven test/ConvertToBin test/Square test/Average
