@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"compiler/parser"
+	"compiler/compilation_engine"
 	"compiler/tokenizer"
+	"compiler/vmwriter"
 )
 
 var (
 	tokenizeOnly = flag.Bool("tokenize", false, "Tokenization only mode")
-	parse        = flag.Bool("parse", false, "Tokenization + Parsing mode")
 )
 
 func compile(srcPath string) error {
@@ -48,14 +48,17 @@ func compile(srcPath string) error {
 		return nil
 	}
 
-	// Parse
-	parser := parser.NewParser(*tokenizer)
-	err = parser.Parse()
+	vmWriter, err := vmwriter.NewVMWriter()
+
+	// Compile
+	ce := compilation_engine.NewCompilationEngine(tokenizer, vmWriter)
+	err = ce.Compile()
 	if err != nil {
 		return fmt.Errorf("Failed to parse: src=%v: %v", srcPath, err)
 	}
 
-	treeXML := parser.XML()
+	// Write parse tree
+	treeXML := ce.XML()
 	treeFileName := base[:strings.LastIndex(base, ".")] + ".xml.out"
 	treeDstPath := filepath.Join(filepath.Dir(srcPath), treeFileName)
 	if os.Getenv("LOGLEVEL") == "debug" {
@@ -66,6 +69,12 @@ func compile(srcPath string) error {
 	if err != nil {
 		return err
 	}
+
+	// Write VM code
+	vmFilename := base[:strings.LastIndex(base, ".")] + ".vm.out"
+	vmDstPath := filepath.Join(filepath.Dir(srcPath), vmFilename)
+	ce.WriteCode(vmDstPath)
+
 	return nil
 }
 

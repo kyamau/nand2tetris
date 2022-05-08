@@ -1,0 +1,4 @@
+class Square {
+  constructor Square new(int Ax, int Ay, int Asize) {
+  }
+}

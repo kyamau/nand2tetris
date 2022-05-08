@@ -1,0 +1,3 @@
+- Run all parser tests for chapter 10, run ``make test_parser``
+- Run all compiler tests for chapter 11, run ``make test_compiler``
+- .vm files in ans/ are compiled with JackCompiler.bat.
