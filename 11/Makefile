@@ -19,39 +19,39 @@ test_parser: build test_parser/ArrayTest test_parser/ExpressionLessSquare test_p
 
 test_parser/ArrayTest: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
 test_parser/ExpressionLessSquare: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
 test_parser/Square: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/*.xml -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
 
 # Test for chapter 11 code generation
- test/Seven: build
+test/Seven: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/ans/*.vm)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ("$@/"+$$file.Name+".out") ("$@/ans/"+$$file.Name)}
 	
- test/ConvertToBin: build
+test/ConvertToBin: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/ans/*.vm)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ("$@/"+$$file.Name+".out") ("$@/ans/"+$$file.Name)}
 	
- test/Square: build
+test/Square: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/ans/*.vm)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ("$@/"+$$file.Name+".out") ("$@/ans/"+$$file.Name)}
 
- test/Average: build
+test/Average: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/ans/*.vm)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ("$@/"+$$file.Name+".out") ("$@/ans/"+$$file.Name)}
 
- test/Pong: build
+test/Pong: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/ans/*.vm)) {echo $$file.Name; $(TOOL_DIR)/TextComparer.bat ("$@/"+$$file.Name+".out") ("$@/ans/"+$$file.Name)}
 
- test/ComplexArrays: build
+test/ComplexArrays: build
 	./compiler.exe $@
-	-foreach ($$file in (Get-ChildItem -Path $@/*.vm -Exclude *T.xml)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ($$file.FullName + ".out") ($$file).FullName}
+	-foreach ($$file in (Get-ChildItem -Path $@/ans/*.vm)) {echo $$file.Name; $(TOOL_DIR)\TextComparer.bat ("$@/"+$$file.Name+".out") ("$@/ans/"+$$file.Name)}
 
 test_compiler: test/Seven test/ConvertToBin test/Square test/Average test/Pong test/ComplexArrays
