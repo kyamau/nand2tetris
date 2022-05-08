@@ -81,7 +81,7 @@ func WriteArithmetic(op parser.ALOperator) []string {
 		code = append(code, "M=D")
 	}
 
-	// Caluculate and load the result to D
+	// Calculate and load the result to D
 	switch op {
 	case parser.ADD:
 		code = append(code, "@14 // add")
@@ -275,7 +275,7 @@ func WriteGoto(label string) []string {
 
 func WriteGotoA() string {
 	var code bytes.Buffer
-	code.WriteString("0;JMP // [Start:WriteGotoA()\r\n")
+	code.WriteString("0;JMP // [Start:WriteGotoA()")
 	return code.String()
 }
 
@@ -305,11 +305,16 @@ func WriteFunction(name string, nLocals int) []string {
 	return code
 }
 
+// Write code for return.
+// See the chapter 8 slide p43- https://drive.google.com/file/d/1lBsaO5XKLkUgrGY6g6vLMsiZo6rWxlYJ/view
+// NOTE: Contract between caller and callee
+// - A return value(must exist) had to be pushed by callee on the top of the stack. See WriteCall().
+// - A return address had to be pushed by caller on LCL-5.
 func WriteReturn() []string {
 	var code []string
 
-	// RET = *(CALLEE_FRAME-5)
-	// We have to memorize a return address before setting a return value on the top of the calle's frame.
+	// R15 = *(LCL-5)
+	// Before copying the return value on *ARG(the top of the calle's frame), we have to memorize the return address first.
 	// Because if the function don't have any argurements, the top of the frame is the return address and will be overwritten by the return value.
 	code = append(code, "@LCL")
 	code = append(code, "D=M-1")
@@ -319,25 +324,26 @@ func WriteReturn() []string {
 	code = append(code, "D=D-1")
 	code = append(code, "A=D")
 	code = append(code, "D=M")
-	code = append(code, "@R15") // RET
+	code = append(code, "@R15") // return address
 	code = append(code, "M=D")
 
-	// Pop the return value to *ARG, that is the top of the callee's frame.
+	// Pop the return value to *ARG(the top of the caller's frame)
 	code = append(code, WritePushPop(parser.C_POP, "argument", 0)...)
-	// Set ARG+1 to SP.
+
+	// SP = ARG+1
 	code = append(code, "@ARG")
 	code = append(code, "D=M")
 	code = append(code, "@SP")
 	code = append(code, "M=D+1")
 
-	// CALLEE_FRAME = LCL
+	// R13 is just a counter
 	code = append(code, "@LCL // [Start:WriteReturn] R13 = LCL")
 	code = append(code, "D=M")
-	code = append(code, "@R13") //R13 is a counter
+	code = append(code, "@R13")
 	code = append(code, "M=D")
 
 	// Restore caller registers
-	// THAT = *(CALLEE_FRAME-1)
+	// THAT = *(LCL-1)
 	code = append(code, "@R13")
 	code = append(code, "M=M-1")
 	code = append(code, "A=M")
@@ -345,7 +351,7 @@ func WriteReturn() []string {
 	code = append(code, "@THAT")
 	code = append(code, "M=D")
 
-	// THIS = *(CALLEE_FRAME-2)
+	// THIS = *(LCL-2)
 	code = append(code, "@R13")
 	code = append(code, "M=M-1")
 	code = append(code, "A=M")
@@ -353,7 +359,7 @@ func WriteReturn() []string {
 	code = append(code, "@THIS")
 	code = append(code, "M=D")
 
-	// ARG = *(CALLEE_FRAME-3)
+	// ARG = *(LCL-3)
 	code = append(code, "@R13")
 	code = append(code, "M=M-1")
 	code = append(code, "A=M")
@@ -361,7 +367,7 @@ func WriteReturn() []string {
 	code = append(code, "@ARG")
 	code = append(code, "M=D")
 
-	// LCL = *(CALLEE_FRAME-4)
+	// LCL = *(LCL-4)
 	code = append(code, "@R13")
 	code = append(code, "M=M-1")
 	code = append(code, "A=M")
@@ -369,13 +375,16 @@ func WriteReturn() []string {
 	code = append(code, "@LCL")
 	code = append(code, "M=D")
 
-	// Jump to RET
-	code = append(code, "@R15") // RET
+	// Jump to the return address in R15
+	code = append(code, "@R15")
 	code = append(code, "A=M")
 	code = append(code, WriteGotoA())
 	return code
 }
 
+// Write code for call.
+// See chapter 8 slide p32-.
+// https://drive.google.com/file/d/1lBsaO5XKLkUgrGY6g6vLMsiZo6rWxlYJ/view
 func WriteCall(name string, nArgs int) []string {
 	var code []string
 	// Push return address
