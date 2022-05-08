@@ -400,7 +400,7 @@ func (ce *CompilationEngine) compileSubroutineBody(subroutineType string, subrou
 		ce.vmwriter.Add(PopCode("pointer", 0))
 	}
 
-	// Set the instance(passed as 1st parameter implicitly) to the pointer
+	// Set the instance(passed as 1st parameter implicitly) to this
 	if subroutineType == "method" {
 		ce.vmwriter.Add(PushCode("argument", 0))
 		ce.vmwriter.Add(PopCode("pointer", 0))
@@ -501,8 +501,8 @@ func (ce *CompilationEngine) compileParameterList(subroutineType string) (Elem, 
 		return parameterList, nil
 	}
 
-	// Add a dummy implicit 1st argument for just counting up the other argument's index.
-	// Note: "this" isn't a variable but a keyword in this compiler. So, this is just a dummy and not treated as variable.
+	// Add a dummy 1st argument for counting up the other argument's index.
+	// Note: "this" isn't a variable but a keyword in this compiler. "this" variable below doesn't be used.
 	if subroutineType == "method" {
 		ce.subroutineTable().Define("this", ce.classTable().Name(), "argument")
 	}
@@ -645,6 +645,7 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 		let.AddChild(ce.NewTokenElemCurrent())
 
 		ce.t.Advance()
+		// Push an array index: a result of the expression in [].
 		expression, err := ce.compileExpression()
 		if err != nil {
 			return nil, fmt.Errorf("Failed to compile expression in right side: %v", err)
@@ -658,8 +659,9 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 		}
 		let.AddChild(ce.NewTokenElemCurrent())
 		ce.t.Advance()
-		// array head + index
+		// Push the address of array head.
 		ce.vmwriter.Add(PushCode(varKindToSegment(varKind), varIndex))
+		// Calculate target address: the array head + the index.  => <array dest>
 		ce.vmwriter.Add("add")
 	}
 
@@ -670,6 +672,7 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	let.AddChild(ce.NewTokenElemCurrent())
 
 	ce.t.Advance()
+	// Push a result of the right side expression. => <result>
 	expression, err := ce.compileExpression()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compile expression in left side: %v", err)
@@ -684,13 +687,14 @@ func (ce *CompilationEngine) compileLet() (Elem, error) {
 	let.AddChild(ce.NewTokenElemCurrent())
 
 	if isArray {
-		ce.vmwriter.Add(PopCode("temp", 0))    // Store the result of the left expression
-		ce.vmwriter.Add(PopCode("pointer", 1)) // Store the pointer to the array head + index
-		ce.vmwriter.Add(PushCode("temp", 0))
-		ce.vmwriter.Add(PopCode("that", 0))
-	} else { //{ varType == "int" || varType == "boolean" || varType == "char" {
+		// Write <result> to <array dest>.
+		ce.vmwriter.Add(PopCode("temp", 0))    // Pop <result> to temp 0
+		ce.vmwriter.Add(PopCode("pointer", 1)) // Pop <array dest> to pointer 1 (= that 0)
+		ce.vmwriter.Add(PushCode("temp", 0))   // Push <result>
+		ce.vmwriter.Add(PopCode("that", 0))    // Pop <array dest> to that 0, that is, write <result> to <array dest>
+	} else {
+		// Write <result> to the segment of variable
 		ce.vmwriter.Add(PopCode(varKindToSegment(varKind), varIndex))
-		//TODO add other kind
 	}
 	return let, nil
 }
@@ -1053,7 +1057,7 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 		// keywordConstant
 		term.AddChild(ce.NewTokenElemCurrent())
 
-		// Write keyword
+		// Write a keyword constant. See the spec at p263.
 		keyword := ce.t.Current().String()
 		switch keyword {
 		case "true":
@@ -1064,7 +1068,10 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 			// false = 0 (0x0000)
 			ce.vmwriter.Add(PushCode("constant", 0))
 		case "this":
+			// Let the virtual segment "this" point the current instance. See p262.
 			ce.vmwriter.Add(PushCode("pointer", 0))
+		case "null":
+			ce.vmwriter.Add(PushCode("constant", 0))
 		}
 	} else if isUnaryOp(ce.t.Current()) {
 		// UnaryOp term
@@ -1161,6 +1168,7 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 			term.AddChild(ce.NewTokenElemCurrent())
 
 			ce.t.Advance()
+			// Push an index
 			expression, err := ce.compileExpression()
 			if err != nil {
 				return nil, err
@@ -1173,9 +1181,11 @@ func (ce *CompilationEngine) compileTerm() (Elem, error) {
 				return nil, err
 			}
 			term.AddChild(ce.NewTokenElemCurrent())
-			// array head + index
+			// Calculate array head + index
 			ce.vmwriter.Add(PushCode(varKindToSegment(varKind), varIndex))
 			ce.vmwriter.Add("add")
+
+			// Push array[i]
 			ce.vmwriter.Add(PopCode("pointer", 1))
 			ce.vmwriter.Add(PushCode("that", 0))
 		} else if a.Type() == SYMBOL && a.String() == "." {
@@ -1219,18 +1229,17 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	// Read the name and decide whether a method or a function/constuctor by its name. See p208.
 	// TODO: Refactoring
 	isMethod := false
-	isReceiverVariable := false
+	calledFromThis := false
 	var varKind string
-	var varType string
 	var varIndex int
 	if a1.String() == "." {
 		// varName.foo() is a method.
 		if table, ok := ce.resolveVariableInSubroutine(prefix); ok {
 			isMethod = true
-			isReceiverVariable = true
-			varType, _ = table.TypeOf(prefix)
 			varKind, _ = table.KindOf(prefix)
 			varIndex, _ = table.IndexOf(prefix)
+			// Overwrite current prefix(=varName) with class name
+			varType, _ := table.TypeOf(prefix)
 			prefix = varType
 		}
 
@@ -1251,8 +1260,9 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 		e.AddChild(ce.NewTokenElemCurrent())
 		subroutineName += ce.t.Current().String()
 	} else {
-		// foo() is a method. Complete the type name.
+		// foo() is a method and called inside the object. Complete the type name.
 		isMethod = true
+		calledFromThis = true
 		subroutineName = fmt.Sprintf("%s.%s", ce.classTable().Name(), prefix)
 	}
 
@@ -1262,12 +1272,12 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	if isMethod {
 		// Count up for the implicit 1st parameter
 		nArgs++
-		if isReceiverVariable {
-			segment := varKindToSegment(varKind)
-			ce.vmwriter.Add(PushCode(segment, varIndex))
-		} else {
-			// The receiver is this
+		if calledFromThis {
+			// Push the address in this segment
 			ce.vmwriter.Add(PushCode("pointer", 0))
+		} else {
+			// Push the address in the variable
+			ce.vmwriter.Add(PushCode(varKindToSegment(varKind), varIndex))
 		}
 	}
 	ce.t.Advance()
@@ -1278,6 +1288,7 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	e.AddChild(ce.NewTokenElemCurrent())
 
 	ce.t.Advance()
+	// Push arguments
 	expressionList, nExps, err := ce.compileExpressionList()
 	if err != nil {
 		return err
@@ -1286,7 +1297,7 @@ func (ce *CompilationEngine) compileSubroutineCall(e Elem) error {
 	nArgs += nExps
 
 	ce.t.Advance()
-	// }
+	// )
 	err = ce.validateCurrent(SYMBOL, ")")
 	if err != nil {
 		return err
