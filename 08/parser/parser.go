@@ -164,7 +164,12 @@ func NewParser(r io.Reader) (*Parser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Reading vm code failed : %v", err)
 	}
-	lines := strings.Split(s, "\r\n")
+	var lines []string
+	if strings.Contains(s, "\r\n") {
+		lines = strings.Split(s, "\r\n")
+	} else {
+		lines = strings.Split(s, "\n")
+	}
 	lines = removeIrrelvants(lines)
 	p := &Parser{commands: lines, current: -1}
 	return p, nil
