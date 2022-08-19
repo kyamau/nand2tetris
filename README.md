@@ -2,6 +2,8 @@
 
 An implementation of Nand2Tetris (without the chapter 12).
 
+<img src="./img/Pong.gif" width="400">
+
 ## Directories
 - 05 : Memory, CPU, and computer
 - 06 : Assembler
